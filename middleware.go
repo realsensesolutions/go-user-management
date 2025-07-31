@@ -195,26 +195,11 @@ func MustGetUserIDFromContext(r *http.Request) string {
 	return userID
 }
 
-// Chi route parameter helpers (commonly used in RealSense projects)
-
-// GetBoardIDFromURL extracts boardId parameter from Chi URL
-func GetBoardIDFromURL(r *http.Request) string {
-	return chi.URLParam(r, "boardId")
-}
-
-// GetTopicIDFromURL extracts topicId parameter from Chi URL
-func GetTopicIDFromURL(r *http.Request) string {
-	return chi.URLParam(r, "topicId")
-}
+// Chi route parameter helpers (generic helpers for common patterns)
 
 // GetIDFromURL extracts id parameter from Chi URL
 func GetIDFromURL(r *http.Request) string {
 	return chi.URLParam(r, "id")
-}
-
-// GetMemberIDFromURL extracts memberId parameter from Chi URL
-func GetMemberIDFromURL(r *http.Request) string {
-	return chi.URLParam(r, "memberId")
 }
 
 // GetEmailFromURL extracts email parameter from Chi URL
