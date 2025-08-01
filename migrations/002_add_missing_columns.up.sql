@@ -8,6 +8,6 @@
 -- it needs to check and add missing columns dynamically
 
 -- Add performance indexes that might be missing
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+-- Note: No email index needed since id IS the email address (already primary key indexed)
 CREATE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key) WHERE api_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);

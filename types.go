@@ -10,6 +10,7 @@ type User struct {
 	FamilyName string    `json:"familyName" db:"family_name"`
 	Picture    string    `json:"picture" db:"picture"`
 	Role       string    `json:"role" db:"role"`
+	APIKey     string    `json:"apiKey" db:"api_key"`
 	CreatedAt  time.Time `json:"createdAt" db:"created_at"`
 	UpdatedAt  time.Time `json:"updatedAt" db:"updated_at"`
 }

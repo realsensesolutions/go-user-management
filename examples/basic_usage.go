@@ -7,7 +7,6 @@ import (
 	"log"
 
 	user "github.com/realsensesolutions/go-user-management"
-	"github.com/realsensesolutions/go-user-management/internal/sqlite"
 	_ "modernc.org/sqlite"
 )
 
@@ -26,7 +25,7 @@ func main() {
 	}
 
 	// Create repository and service
-	repo := sqlite.NewRepository(db)
+	repo := user.NewSQLiteRepositoryWithDB(db)
 	service := user.NewService(repo)
 
 	ctx := context.Background()

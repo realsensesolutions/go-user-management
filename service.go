@@ -18,7 +18,7 @@ var (
 
 // Service provides user management operations
 type Service interface {
-	// GetUserByID retrieves a user by their ID  
+	// GetUserByID retrieves a user by their ID
 	GetUserByID(ctx context.Context, userID string) (*User, error)
 
 	// GetUserByEmail retrieves a user by their email address
@@ -38,6 +38,9 @@ type Service interface {
 
 	// GenerateAPIKey generates and stores a new API key for a user
 	GenerateAPIKey(ctx context.Context, userID, email string) (string, error)
+
+	// UpdateAPIKey updates the API key for a user
+	UpdateAPIKey(ctx context.Context, userID, email, apiKey string) error
 
 	// GetAPIKey retrieves the API key for a user
 	GetAPIKey(ctx context.Context, userID string) (string, error)
@@ -150,19 +153,43 @@ func (s *userService) ValidateAPIKey(ctx context.Context, apiKey string) (*User,
 
 // GenerateAPIKey generates and stores a new API key for a user
 func (s *userService) GenerateAPIKey(ctx context.Context, userID, email string) (string, error) {
+	fmt.Printf("🔍 [GENERATE_API_KEY] Called with userID='%s', email='%s'\n", userID, email)
+
 	if userID == "" || email == "" {
+		fmt.Printf("❌ [GENERATE_API_KEY] Missing required parameters: userID='%s', email='%s'\n", userID, email)
 		return "", fmt.Errorf("user ID and email are required")
 	}
 
 	// Generate a secure random API key (implementation can be customized)
 	apiKey := generateSecureAPIKey()
+	fmt.Printf("🔍 [GENERATE_API_KEY] Generated API key: '%s'\n", apiKey)
 
 	err := s.repo.UpsertAPIKey(userID, email, apiKey)
 	if err != nil {
+		fmt.Printf("❌ [GENERATE_API_KEY] Failed to store API key: %v\n", err)
 		return "", fmt.Errorf("failed to store API key: %v", err)
 	}
 
+	fmt.Printf("✅ [GENERATE_API_KEY] Successfully generated and stored API key\n")
 	return apiKey, nil
+}
+
+// UpdateAPIKey updates the API key for a user
+func (s *userService) UpdateAPIKey(ctx context.Context, userID, email, apiKey string) error {
+	fmt.Printf("🔄 [UPDATE_API_KEY] Updating API key for user '%s' to '%s'\n", userID, apiKey)
+
+	if userID == "" || email == "" || apiKey == "" {
+		return fmt.Errorf("user ID, email, and API key are required")
+	}
+
+	err := s.repo.UpsertAPIKey(userID, email, apiKey)
+	if err != nil {
+		fmt.Printf("❌ [UPDATE_API_KEY] Failed to update in DB: %v\n", err)
+		return fmt.Errorf("failed to update API key: %v", err)
+	}
+
+	fmt.Printf("✅ [UPDATE_API_KEY] Successfully updated API key in DB\n")
+	return nil
 }
 
 // GetAPIKey retrieves the API key for a user
