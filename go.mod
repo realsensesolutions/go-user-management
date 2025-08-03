@@ -7,7 +7,7 @@ toolchain go1.24.5
 require (
 	github.com/coreos/go-oidc/v3 v3.11.0
 	github.com/go-chi/chi/v5 v5.2.2
-	github.com/realsensesolutions/go-database v1.1.0
+	github.com/realsensesolutions/go-database v1.3.0
 	golang.org/x/oauth2 v0.24.0
 	modernc.org/sqlite v1.38.2
 )

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -20,15 +21,17 @@ const (
 // OAuth2Handlers provides HTTP handlers for OAuth2 flow
 type OAuth2Handlers struct {
 	oauth2Service   *OAuth2Service
+	cognitoConfig   *CognitoConfig
 	getFrontEndURL  func() string
 	getCookieDomain func() string
 	createJWTCookie func(token string, maxAge int, domain string) string
 }
 
 // NewOAuth2Handlers creates a new OAuth2 handlers instance
-func NewOAuth2Handlers(service *OAuth2Service, frontEndURL, cookieDomain func() string, createJWTCookie func(string, int, string) string) *OAuth2Handlers {
+func NewOAuth2Handlers(service *OAuth2Service, cognitoConfig *CognitoConfig, frontEndURL, cookieDomain func() string, createJWTCookie func(string, int, string) string) *OAuth2Handlers {
 	return &OAuth2Handlers{
 		oauth2Service:   service,
+		cognitoConfig:   cognitoConfig,
 		getFrontEndURL:  frontEndURL,
 		getCookieDomain: cookieDomain,
 		createJWTCookie: createJWTCookie,
@@ -71,7 +74,7 @@ func (h *OAuth2Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Handle OAuth2 callback
-	_, rawIDToken, err := h.oauth2Service.HandleCallback(code, state)
+	_, rawIDToken, redirectURL, err := h.oauth2Service.HandleCallback(code, state)
 	if err != nil {
 		log.Printf("❌ OAuth2 callback failed: %v", err)
 
@@ -120,14 +123,18 @@ func (h *OAuth2Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request)
 	// Set cookie and redirect
 	w.Header().Set("Set-Cookie", cookie)
 
-	// Default to dashboard
-	finalRedirectURL := h.getFrontEndURL() + "/dashboard"
+	// Use the redirect URL from state, or default to dashboard
+	finalRedirectURL := redirectURL
+	if finalRedirectURL == "" {
+		finalRedirectURL = h.getFrontEndURL() + "/dashboard"
+	}
 
+	log.Printf("🔗 Redirecting after OAuth success to: %s", finalRedirectURL)
 	w.Header().Set("Location", finalRedirectURL)
 	w.WriteHeader(http.StatusFound)
 }
 
-// LogoutHandler handles logout requests
+// LogoutHandler handles logout requests with Cognito logout URL support
 func (h *OAuth2Handlers) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	// Clear the JWT cookie
 	cookieDomain := h.getCookieDomain()
@@ -139,7 +146,25 @@ func (h *OAuth2Handlers) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 		redirectURL = h.getFrontEndURL()
 	}
 
+	// Set the clear cookie header
 	w.Header().Set("Set-Cookie", clearCookie)
+
+	// If Cognito domain is configured, use Cognito logout URL
+	if h.cognitoConfig.Domain != "" && h.cognitoConfig.ClientID != "" {
+		// URL encode the redirect URL to ensure it's properly formatted
+		encodedRedirectURL := url.QueryEscape(redirectURL)
+
+		// Construct Cognito logout URL
+		logoutURL := fmt.Sprintf("%s/logout?client_id=%s&logout_uri=%s",
+			h.cognitoConfig.Domain, h.cognitoConfig.ClientID, encodedRedirectURL)
+
+		log.Printf("🔗 Redirecting to Cognito logout: %s", logoutURL)
+		w.Header().Set("Location", logoutURL)
+		w.WriteHeader(http.StatusFound)
+		return
+	}
+
+	// Simple logout - just clear cookie and redirect to specified URL
 	w.Header().Set("Location", redirectURL)
 	w.WriteHeader(http.StatusFound)
 }

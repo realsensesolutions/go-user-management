@@ -25,23 +25,24 @@ func TestOAuth2Service_GenerateAuthURL_StoresState(t *testing.T) {
 		}
 	}()
 
-	// Set up ALL required environment variables for OAuth2
-	requiredEnvs := map[string]string{
-		"COGNITO_CLIENT_ID":     "test-client-id",
-		"COGNITO_CLIENT_SECRET": "test-client-secret",
-		"COGNITO_USER_POOL_ID":  "us-east-1_TestPool",
-		"COGNITO_REDIRECT_URI":  "https://localhost:3000/oauth2/idpresponse",
-		"AWS_REGION":            "us-east-1",
+	// Create test configurations instead of environment variables
+	cognitoConfig := &CognitoConfig{
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		UserPoolID:   "us-east-1_TestPool",
+		RedirectURI:  "https://localhost:3000/oauth2/idpresponse",
+		Region:       "us-east-1",
+		Domain:       "https://test-domain.auth.us-east-1.amazoncognito.com",
 	}
 
-	for key, value := range requiredEnvs {
-		os.Setenv(key, value)
+	oauth2Config := &OAuth2Config{
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		RedirectPath: "/oauth2/idpresponse",
+		Scopes:       []string{"openid", "email", "profile"},
+		ProviderURL:  "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TestPool",
+		RedirectURI:  "https://localhost:3000/oauth2/idpresponse",
 	}
-	defer func() {
-		for key := range requiredEnvs {
-			os.Unsetenv(key)
-		}
-	}()
 
 	// Create database and run migrations
 	db, err := database.GetDB()
@@ -58,16 +59,9 @@ func TestOAuth2Service_GenerateAuthURL_StoresState(t *testing.T) {
 	// Create OAuth2 service components
 	stateRepo := NewSQLiteStateRepository(database.GetDB)
 	mockUserService := NewService(NewSQLiteRepository(database.GetDB))
-	oauth2Config := &OAuth2Config{
-		ClientID:     "test-client-id",
-		ClientSecret: "test-client-secret",
-		RedirectPath: "/oauth2/idpresponse",
-		Scopes:       []string{"openid", "email", "profile"},
-		ProviderURL:  "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_TestPool",
-	}
 
-	// Create OAuth2 service
-	oauth2Service := NewOAuth2Service(mockUserService, stateRepo, oauth2Config)
+	// Create OAuth2 service with both configurations
+	oauth2Service := NewOAuth2Service(mockUserService, stateRepo, oauth2Config, cognitoConfig)
 
 	// Test data
 	testRedirectURL := "https://localhost:8000/dashboard"

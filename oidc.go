@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -17,8 +16,8 @@ var (
 	providerMutex sync.Mutex
 )
 
-// initOIDCProvider initializes the OIDC provider
-func initOIDCProvider() (*oidc.Provider, error) {
+// initOIDCProvider initializes the OIDC provider with the provided configuration
+func initOIDCProvider(config *CognitoConfig) (*oidc.Provider, error) {
 	providerMutex.Lock()
 	defer providerMutex.Unlock()
 
@@ -26,14 +25,15 @@ func initOIDCProvider() (*oidc.Provider, error) {
 		return oidcProvider, nil
 	}
 
-	userPoolID := os.Getenv("COGNITO_USER_POOL_ID")
-	region := os.Getenv("AWS_REGION")
-
-	if userPoolID == "" {
-		return nil, fmt.Errorf("COGNITO_USER_POOL_ID environment variable is required")
+	if config.UserPoolID == "" {
+		return nil, fmt.Errorf("UserPoolID is required in CognitoConfig")
 	}
 
-	issuerURL := fmt.Sprintf("https://cognito-idp.%s.amazonaws.com/%s", region, userPoolID)
+	if config.Region == "" {
+		return nil, fmt.Errorf("Region is required in CognitoConfig")
+	}
+
+	issuerURL := fmt.Sprintf("https://cognito-idp.%s.amazonaws.com/%s", config.Region, config.UserPoolID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -45,13 +45,12 @@ func initOIDCProvider() (*oidc.Provider, error) {
 	}
 
 	// Initialize the ID token verifier
-	clientID := os.Getenv("COGNITO_CLIENT_ID")
-	if clientID == "" {
-		return nil, fmt.Errorf("COGNITO_CLIENT_ID environment variable is required")
+	if config.ClientID == "" {
+		return nil, fmt.Errorf("ClientID is required in CognitoConfig")
 	}
 
 	oidcVerifier = oidcProvider.Verifier(&oidc.Config{
-		ClientID: clientID,
+		ClientID: config.ClientID,
 	})
 
 	log.Printf("✅ OIDC provider initialized for issuer: %s", issuerURL)
@@ -59,14 +58,14 @@ func initOIDCProvider() (*oidc.Provider, error) {
 }
 
 // ValidateOIDCToken validates an OIDC ID token and returns claims
-func ValidateOIDCToken(ctx context.Context, tokenString string) (*Claims, error) {
+func ValidateOIDCToken(ctx context.Context, tokenString string, config *CognitoConfig) (*Claims, error) {
 	if tokenString == "" {
 		return nil, fmt.Errorf("empty token")
 	}
 
 	// Initialize verifier if not already done
 	if oidcVerifier == nil {
-		_, err := initOIDCProvider()
+		_, err := initOIDCProvider(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize OIDC provider: %w", err)
 		}

@@ -5,31 +5,31 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"time"
 
-	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
 
 // OAuth2Service handles complete OAuth2/OIDC flows
 type OAuth2Service struct {
-	userService Service
-	stateRepo   StateRepository
-	config      *OAuth2Config
+	userService   Service
+	stateRepo     StateRepository
+	config        *OAuth2Config
+	cognitoConfig *CognitoConfig
 }
 
-// NewOAuth2Service creates a new OAuth2 service with environment validation
-func NewOAuth2Service(userService Service, stateRepo StateRepository, config *OAuth2Config) *OAuth2Service {
-	// Validate required environment variables for OAuth2
-	if err := validateOAuth2Environment(); err != nil {
+// NewOAuth2Service creates a new OAuth2 service with configuration validation
+func NewOAuth2Service(userService Service, stateRepo StateRepository, config *OAuth2Config, cognitoConfig *CognitoConfig) *OAuth2Service {
+	// Validate required configuration for OAuth2
+	if err := validateOAuth2Config(config, cognitoConfig); err != nil {
 		panic(fmt.Sprintf("OAuth2 service creation failed: %v", err))
 	}
 
 	return &OAuth2Service{
-		userService: userService,
-		stateRepo:   stateRepo,
-		config:      config,
+		userService:   userService,
+		stateRepo:     stateRepo,
+		config:        config,
+		cognitoConfig: cognitoConfig,
 	}
 }
 
@@ -58,45 +58,45 @@ func (s *OAuth2Service) GenerateAuthURL(redirectURL string) (string, error) {
 	return authURL, nil
 }
 
-// HandleCallback processes an OAuth2 callback and returns user claims and raw ID token
-func (s *OAuth2Service) HandleCallback(code, state string) (*Claims, string, error) {
+// HandleCallback processes an OAuth2 callback and returns user claims, raw ID token, and redirect URL
+func (s *OAuth2Service) HandleCallback(code, state string) (*Claims, string, string, error) {
 	if code == "" {
-		return nil, "", fmt.Errorf("missing authorization code")
+		return nil, "", "", fmt.Errorf("missing authorization code")
 	}
 
 	if state == "" {
-		return nil, "", fmt.Errorf("missing state parameter")
+		return nil, "", "", fmt.Errorf("missing state parameter")
 	}
 
 	// Validate state parameter and get redirect URL
-	_, isValid := s.stateRepo.ValidateAndRemoveState(state)
+	redirectURL, isValid := s.stateRepo.ValidateAndRemoveState(state)
 	if !isValid {
-		return nil, "", fmt.Errorf("invalid or expired state parameter")
+		return nil, "", "", fmt.Errorf("invalid or expired state parameter")
 	}
 
 	// Initialize OAuth2 config
 	oauth2Config, err := s.createOAuth2Config()
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to initialize OAuth2 config: %w", err)
+		return nil, "", "", fmt.Errorf("failed to initialize OAuth2 config: %w", err)
 	}
 
 	// Exchange authorization code for tokens
 	log.Printf("🔄 Exchanging authorization code for tokens...")
 	token, err := oauth2Config.Exchange(context.Background(), code)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to exchange code for token: %w", err)
+		return nil, "", "", fmt.Errorf("failed to exchange code for token: %w", err)
 	}
 
 	// Extract ID token
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
-		return nil, "", fmt.Errorf("no ID token in response")
+		return nil, "", "", fmt.Errorf("no ID token in response")
 	}
 
 	// Validate ID token
-	claims, err := ValidateOIDCToken(context.Background(), rawIDToken)
+	claims, err := ValidateOIDCToken(context.Background(), rawIDToken, s.cognitoConfig)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to validate ID token: %w", err)
+		return nil, "", "", fmt.Errorf("failed to validate ID token: %w", err)
 	}
 
 	// Create or update user in database
@@ -106,30 +106,27 @@ func (s *OAuth2Service) HandleCallback(code, state string) (*Claims, string, err
 		// Don't fail the authentication, just log the error
 	}
 
-	return claims, rawIDToken, nil
+	return claims, rawIDToken, redirectURL, nil
 }
 
 // createOAuth2Config creates an OAuth2 configuration
 func (s *OAuth2Service) createOAuth2Config() (*oauth2.Config, error) {
-	clientID := os.Getenv("COGNITO_CLIENT_ID")
-	clientSecret := os.Getenv("COGNITO_CLIENT_SECRET")
-
-	if clientID == "" {
-		return nil, fmt.Errorf("COGNITO_CLIENT_ID environment variable is required")
+	if s.cognitoConfig.ClientID == "" {
+		return nil, fmt.Errorf("ClientID is required in CognitoConfig")
 	}
 
 	// Initialize provider if not already done
-	provider, err := initOIDCProvider()
+	provider, err := initOIDCProvider(s.cognitoConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OIDC provider: %w", err)
 	}
 
 	config := &oauth2.Config{
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		RedirectURL:  os.Getenv("COGNITO_REDIRECT_URI"), // Use redirect URI from environment
+		ClientID:     s.cognitoConfig.ClientID,
+		ClientSecret: s.cognitoConfig.ClientSecret,
+		RedirectURL:  s.config.RedirectURI,
 		Endpoint:     provider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID, "email", "profile"},
+		Scopes:       s.config.Scopes,
 	}
 
 	return config, nil
@@ -163,25 +160,42 @@ func (s *OAuth2Service) upsertUser(claims *Claims) error {
 	return nil
 }
 
-// validateOAuth2Environment validates that all required OAuth2 environment variables are set
-func validateOAuth2Environment() error {
-	required := map[string]string{
-		"COGNITO_CLIENT_ID":     os.Getenv("COGNITO_CLIENT_ID"),
-		"COGNITO_CLIENT_SECRET": os.Getenv("COGNITO_CLIENT_SECRET"),
-		"COGNITO_USER_POOL_ID":  os.Getenv("COGNITO_USER_POOL_ID"),
-		"COGNITO_REDIRECT_URI":  os.Getenv("COGNITO_REDIRECT_URI"),
-		"AWS_REGION":            os.Getenv("AWS_REGION"),
+// validateOAuth2Config validates that all required OAuth2 configuration is provided
+func validateOAuth2Config(config *OAuth2Config, cognitoConfig *CognitoConfig) error {
+	if config == nil {
+		return fmt.Errorf("OAuth2Config cannot be nil")
+	}
+
+	if cognitoConfig == nil {
+		return fmt.Errorf("CognitoConfig cannot be nil")
 	}
 
 	var missing []string
-	for key, value := range required {
-		if value == "" {
-			missing = append(missing, key)
-		}
+
+	if cognitoConfig.ClientID == "" {
+		missing = append(missing, "CognitoConfig.ClientID")
+	}
+	if cognitoConfig.ClientSecret == "" {
+		missing = append(missing, "CognitoConfig.ClientSecret")
+	}
+	if cognitoConfig.UserPoolID == "" {
+		missing = append(missing, "CognitoConfig.UserPoolID")
+	}
+	if cognitoConfig.RedirectURI == "" {
+		missing = append(missing, "CognitoConfig.RedirectURI")
+	}
+	if cognitoConfig.Region == "" {
+		missing = append(missing, "CognitoConfig.Region")
+	}
+	if config.RedirectURI == "" {
+		missing = append(missing, "OAuth2Config.RedirectURI")
+	}
+	if len(config.Scopes) == 0 {
+		missing = append(missing, "OAuth2Config.Scopes")
 	}
 
 	if len(missing) > 0 {
-		return fmt.Errorf("missing required OAuth2 environment variables: %v", missing)
+		return fmt.Errorf("missing required OAuth2 configuration fields: %v", missing)
 	}
 
 	return nil
