@@ -2,9 +2,10 @@ package user
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
-	"time"
 )
 
 var (
@@ -153,42 +154,32 @@ func (s *userService) ValidateAPIKey(ctx context.Context, apiKey string) (*User,
 
 // GenerateAPIKey generates and stores a new API key for a user
 func (s *userService) GenerateAPIKey(ctx context.Context, userID, email string) (string, error) {
-	fmt.Printf("🔍 [GENERATE_API_KEY] Called with userID='%s', email='%s'\n", userID, email)
-
 	if userID == "" || email == "" {
-		fmt.Printf("❌ [GENERATE_API_KEY] Missing required parameters: userID='%s', email='%s'\n", userID, email)
 		return "", fmt.Errorf("user ID and email are required")
 	}
 
 	// Generate a secure random API key (implementation can be customized)
 	apiKey := generateSecureAPIKey()
-	fmt.Printf("🔍 [GENERATE_API_KEY] Generated API key: '%s'\n", apiKey)
 
 	err := s.repo.UpsertAPIKey(userID, email, apiKey)
 	if err != nil {
-		fmt.Printf("❌ [GENERATE_API_KEY] Failed to store API key: %v\n", err)
 		return "", fmt.Errorf("failed to store API key: %v", err)
 	}
 
-	fmt.Printf("✅ [GENERATE_API_KEY] Successfully generated and stored API key\n")
 	return apiKey, nil
 }
 
 // UpdateAPIKey updates the API key for a user
 func (s *userService) UpdateAPIKey(ctx context.Context, userID, email, apiKey string) error {
-	fmt.Printf("🔄 [UPDATE_API_KEY] Updating API key for user '%s' to '%s'\n", userID, apiKey)
-
 	if userID == "" || email == "" || apiKey == "" {
 		return fmt.Errorf("user ID, email, and API key are required")
 	}
 
 	err := s.repo.UpsertAPIKey(userID, email, apiKey)
 	if err != nil {
-		fmt.Printf("❌ [UPDATE_API_KEY] Failed to update in DB: %v\n", err)
 		return fmt.Errorf("failed to update API key: %v", err)
 	}
 
-	fmt.Printf("✅ [UPDATE_API_KEY] Successfully updated API key in DB\n")
 	return nil
 }
 
@@ -223,10 +214,15 @@ func (s *userService) ListUsers(ctx context.Context, limit, offset int) ([]*User
 	return users, nil
 }
 
-// generateSecureAPIKey generates a secure random API key
-// This is a basic implementation - in production, you might want to use a more sophisticated approach
+// generateSecureAPIKey generates a cryptographically secure random API key
 func generateSecureAPIKey() string {
-	// This is a placeholder implementation
-	// In a real implementation, you would generate a cryptographically secure random string
-	return fmt.Sprintf("usr_%d", time.Now().UnixNano())
+	// Generate 32 random bytes (256 bits) for security
+	bytes := make([]byte, 32)
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to a simpler but still random approach if crypto/rand fails
+		panic(fmt.Sprintf("failed to generate secure random bytes: %v", err))
+	}
+	
+	// Convert to hex string and add prefix for identification
+	return fmt.Sprintf("usr_%s", hex.EncodeToString(bytes))
 }

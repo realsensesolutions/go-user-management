@@ -30,7 +30,6 @@ func NewSQLiteRepositoryWithDB(db *sql.DB) Repository {
 
 // GetUserByID retrieves a user by ID
 func (r *sqliteRepository) GetUserByID(userID string) (*User, error) {
-	fmt.Printf("🔍 [GET_USER_BY_ID] Looking up user: '%s'\n", userID)
 	db, err := r.getDB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
@@ -54,9 +53,6 @@ func (r *sqliteRepository) GetUserByID(userID string) (*User, error) {
 		&user.UpdatedAt,
 	)
 
-	if err == nil {
-		fmt.Printf("✅ [GET_USER_BY_ID] Found user '%s' with API key: '%s'\n", user.ID, user.APIKey)
-	}
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -255,8 +251,6 @@ func (r *sqliteRepository) GetAPIKey(userID string) (string, error) {
 
 // UpsertAPIKey creates or updates the API key for a user
 func (r *sqliteRepository) UpsertAPIKey(userID, email, apiKey string) error {
-	fmt.Printf("🔍 [UPSERT_API_KEY] Called with userID='%s', email='%s', apiKey='%s'\n", userID, email, apiKey)
-
 	db, err := r.getDB()
 	if err != nil {
 		return fmt.Errorf("failed to get database connection: %w", err)
@@ -265,25 +259,18 @@ func (r *sqliteRepository) UpsertAPIKey(userID, email, apiKey string) error {
 
 	// Try to update existing user first
 	updateQuery := `UPDATE users SET api_key = ?, updated_at = ? WHERE id = ?`
-	fmt.Printf("🔍 [UPSERT_API_KEY] Attempting to update user with ID='%s'\n", userID)
-
 	result, err := database.ExecWithRetry(db, updateQuery, apiKey, time.Now(), userID)
 	if err != nil {
-		fmt.Printf("❌ [UPSERT_API_KEY] Failed to update API key: %v\n", err)
 		return fmt.Errorf("failed to update API key: %w", err)
 	}
 
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		fmt.Printf("❌ [UPSERT_API_KEY] Failed to get rows affected: %v\n", err)
 		return fmt.Errorf("failed to get rows affected: %w", err)
 	}
 
-	fmt.Printf("🔍 [UPSERT_API_KEY] Update affected %d rows\n", rowsAffected)
-
 	// If no rows were affected, the user doesn't exist, so create them
 	if rowsAffected == 0 {
-		fmt.Printf("🔍 [UPSERT_API_KEY] No rows affected, creating new user\n")
 		now := time.Now()
 		// Note: id IS the email address in the new schema
 		// Use INSERT OR REPLACE to handle any race conditions
@@ -295,15 +282,10 @@ func (r *sqliteRepository) UpsertAPIKey(userID, email, apiKey string) error {
 			idToUse = userID // Fallback to userID if email not provided
 		}
 
-		fmt.Printf("🔍 [UPSERT_API_KEY] Inserting new user with ID='%s'\n", idToUse)
 		_, err = database.ExecWithRetry(db, insertQuery, idToUse, "Unknown", "User", apiKey, now, now)
 		if err != nil {
-			fmt.Printf("❌ [UPSERT_API_KEY] Failed to create user with API key: %v\n", err)
 			return fmt.Errorf("failed to create user with API key: %w", err)
 		}
-		fmt.Printf("✅ [UPSERT_API_KEY] Successfully created new user\n")
-	} else {
-		fmt.Printf("✅ [UPSERT_API_KEY] Successfully updated existing user\n")
 	}
 
 	return nil
@@ -352,7 +334,7 @@ func (r *sqliteRepository) ListUsers(ctx context.Context, limit, offset int) ([]
 	}
 	defer db.Close()
 
-	query := `SELECT id, email, given_name, family_name, picture, role, api_key, created_at, updated_at 
+	query := `SELECT id, id as email, given_name, family_name, picture, role, api_key, created_at, updated_at 
 	          FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?`
 
 	rows, err := database.QueryWithRetry(db, query, limit, offset)
