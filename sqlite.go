@@ -53,7 +53,6 @@ func (r *sqliteRepository) GetUserByID(userID string) (*User, error) {
 		&user.UpdatedAt,
 	)
 
-
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrUserNotFound
@@ -76,6 +75,10 @@ func (r *sqliteRepository) GetUserByEmail(email string) (*User, error) {
 	query := `SELECT id, id as email, given_name, family_name, picture, role, api_key, created_at, updated_at 
 	          FROM users WHERE id = ?`
 
+	// DEBUG: Print the query and email being searched
+	fmt.Printf("🔍 [DEBUG] GetUserByEmail query: %s\n", query)
+	fmt.Printf("🔍 [DEBUG] Searching for email: '%s'\n", email)
+
 	var user User
 	err = database.QueryRowWithRetry(db, query, email).Scan(
 		&user.ID,
@@ -91,11 +94,25 @@ func (r *sqliteRepository) GetUserByEmail(email string) (*User, error) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
+			fmt.Printf("🔍 [DEBUG] No user found for email: '%s'\n", email)
+			// Let's also check what users actually exist
+			rows, debugErr := database.QueryWithRetry(db, "SELECT id FROM users LIMIT 5")
+			if debugErr == nil {
+				fmt.Printf("🔍 [DEBUG] Existing users in database:\n")
+				for rows.Next() {
+					var existingID string
+					if rows.Scan(&existingID) == nil {
+						fmt.Printf("🔍 [DEBUG] - User ID: '%s'\n", existingID)
+					}
+				}
+				rows.Close()
+			}
 			return nil, ErrUserNotFound
 		}
 		return nil, fmt.Errorf("failed to get user by email: %w", err)
 	}
 
+	fmt.Printf("🔍 [DEBUG] Found user: ID='%s', Email='%s'\n", user.ID, user.Email)
 	return &user, nil
 }
 

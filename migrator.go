@@ -4,9 +4,12 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
+
+	database "github.com/realsensesolutions/go-database"
 )
 
 //go:embed migrations/*.sql
@@ -106,13 +109,13 @@ func GetCurrentSchemaVersion(db *sql.DB) (int, error) {
 			applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)
 	`
-	if _, err := db.Exec(createTable); err != nil {
+	if _, err := database.ExecWithRetry(db, createTable); err != nil {
 		return 0, fmt.Errorf("failed to create schema_migrations table: %w", err)
 	}
 
 	// Get the highest version number
 	var version sql.NullInt64
-	err := db.QueryRow("SELECT MAX(version) FROM schema_migrations").Scan(&version)
+	err := database.QueryRowWithRetry(db, "SELECT MAX(version) FROM schema_migrations").Scan(&version)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get current schema version: %w", err)
 	}
@@ -166,8 +169,8 @@ func GetMigrationStatus(db *sql.DB) (*MigrationStatus, error) {
 func ValidateSchema(db *sql.DB) error {
 	// Check if users table exists with required columns
 	requiredColumns := []string{"id", "email", "given_name", "family_name", "picture", "role", "api_key", "created_at", "updated_at"}
-	
-	rows, err := db.Query("PRAGMA table_info(users)")
+
+	rows, err := database.QueryWithRetry(db, "PRAGMA table_info(users)")
 	if err != nil {
 		return fmt.Errorf("failed to get table info: %w", err)
 	}
@@ -206,26 +209,14 @@ func ValidateSchema(db *sql.DB) error {
 	return nil
 }
 
-// AutoMigrate automatically applies all pending migrations
+// AutoMigrate automatically applies all pending migrations using the shared migration system
 // This should only be used in development environments
 func AutoMigrate(db *sql.DB) error {
-	status, err := GetMigrationStatus(db)
-	if err != nil {
-		return fmt.Errorf("failed to get migration status: %w", err)
-	}
+	log.Printf("🔄 Running AutoMigrate using shared migration system...")
 
-	if status.IsUpToDate {
-		return nil // Nothing to do
-	}
-
-	// Apply each pending migration
-	for _, migration := range status.PendingMigrations {
-		if err := ApplyMigration(db, migration); err != nil {
-			return fmt.Errorf("failed to apply migration %d: %w", migration.Version, err)
-		}
-	}
-
-	return nil
+	// Use the shared database migration system
+	// This will run all registered migrations, including user-management embedded migrations
+	return database.RunAllMigrations()
 }
 
 // ApplyMigration applies a single migration
@@ -246,13 +237,13 @@ func ApplyMigration(db *sql.DB, migration Migration) error {
 
 	// Execute the migration SQL
 	if migration.UpSQL != "" {
-		if _, err := tx.Exec(migration.UpSQL); err != nil {
+		if _, err := database.TxExecWithRetry(tx, migration.UpSQL); err != nil {
 			return fmt.Errorf("failed to execute migration SQL: %w", err)
 		}
 	}
 
 	// Record the migration as applied
-	if _, err := tx.Exec("INSERT INTO schema_migrations (version) VALUES (?)", migration.Version); err != nil {
+	if _, err := database.TxExecWithRetry(tx, "INSERT INTO schema_migrations (version) VALUES (?)", migration.Version); err != nil {
 		return fmt.Errorf("failed to record migration: %w", err)
 	}
 
@@ -267,7 +258,7 @@ func ApplyMigration(db *sql.DB, migration Migration) error {
 // addMissingColumns adds missing columns to existing users table
 func addMissingColumns(tx *sql.Tx) error {
 	// Get existing columns
-	rows, err := tx.Query("PRAGMA table_info(users)")
+	rows, err := database.TxQueryWithRetry(tx, "PRAGMA table_info(users)")
 	if err != nil {
 		return fmt.Errorf("failed to get table info: %w", err)
 	}
@@ -299,7 +290,7 @@ func addMissingColumns(tx *sql.Tx) error {
 	for column, definition := range columnsToAdd {
 		if !existingColumns[column] {
 			alterSQL := fmt.Sprintf("ALTER TABLE users ADD COLUMN %s %s", column, definition)
-			if _, err := tx.Exec(alterSQL); err != nil {
+			if _, err := database.TxExecWithRetry(tx, alterSQL); err != nil {
 				return fmt.Errorf("failed to add column %s: %w", column, err)
 			}
 		}
@@ -307,13 +298,13 @@ func addMissingColumns(tx *sql.Tx) error {
 
 	// Update existing records to have proper timestamps if they're missing
 	if !existingColumns["created_at"] {
-		if _, err := tx.Exec("UPDATE users SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"); err != nil {
+		if _, err := database.TxExecWithRetry(tx, "UPDATE users SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL"); err != nil {
 			return fmt.Errorf("failed to update created_at: %w", err)
 		}
 	}
 
 	if !existingColumns["updated_at"] {
-		if _, err := tx.Exec("UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"); err != nil {
+		if _, err := database.TxExecWithRetry(tx, "UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"); err != nil {
 			return fmt.Errorf("failed to update updated_at: %w", err)
 		}
 	}
