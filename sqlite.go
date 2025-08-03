@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/realsensesolutions/go-database"
@@ -203,11 +204,7 @@ func (r *sqliteRepository) UpdateUser(req UpdateUserRequest) (*User, error) {
 	// Add WHERE clause
 	args = append(args, req.ID)
 
-	query := fmt.Sprintf("UPDATE users SET %s WHERE id = ?",
-		fmt.Sprintf("%s", updates[0]))
-	for i := 1; i < len(updates); i++ {
-		query = fmt.Sprintf("%s, %s", query, updates[i])
-	}
+	query := "UPDATE users SET " + strings.Join(updates, ", ") + " WHERE id = ?"
 
 	_, err = database.ExecWithRetry(db, query, args...)
 	if err != nil {
