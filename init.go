@@ -17,6 +17,7 @@ func init() {
 	database.RegisterMigrations(database.MigrationSource{
 		Name:    "user-management",
 		EmbedFS: &migrationsFS,
+		SubPath: "migrations",
 		Prefix:  "user_",
 	})
 
