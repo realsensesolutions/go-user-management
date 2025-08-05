@@ -11,15 +11,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var testDBFile string
-
-// testGetDB returns a new connection to our test database
-// This matches the expected pattern where each call gets a fresh connection
-func testGetDB() (*sql.DB, error) {
-	// Create a new connection each time (matches production pattern)
-	return sql.Open("sqlite", testDBFile)
-}
-
 func main() {
 	// Create temporary database file
 	tmpFile, err := os.CreateTemp("", "user_example_*.db")
@@ -29,10 +20,11 @@ func main() {
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
 	
-	testDBFile = tmpFile.Name()
+	// Set DATABASE_FILE environment variable so go-database can find it
+	os.Setenv("DATABASE_FILE", tmpFile.Name())
 
 	// Open initial connection for migrations
-	testDB, err := sql.Open("sqlite", testDBFile)
+	testDB, err := sql.Open("sqlite", tmpFile.Name())
 	if err != nil {
 		log.Fatal("Failed to open database:", err)
 	}
@@ -44,7 +36,7 @@ func main() {
 	testDB.Close()
 
 	// Create service using the same pattern as the backend
-	repo := user.NewSQLiteRepository(testGetDB)
+	repo := user.NewSQLiteRepository()
 	service := user.NewService(repo)
 
 	ctx := context.Background()

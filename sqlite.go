@@ -12,26 +12,17 @@ import (
 
 // sqliteRepository implements the Repository interface for SQLite
 type sqliteRepository struct {
-	getDB func() (*sql.DB, error)
+	// No dependencies - uses database.GetDB() directly like all other repositories
 }
 
-// NewSQLiteRepository creates a new SQLite repository with a database connection function
-func NewSQLiteRepository(getDB func() (*sql.DB, error)) Repository {
-	return &sqliteRepository{getDB: getDB}
-}
-
-// NewSQLiteRepositoryWithDB creates a new SQLite repository with an existing database connection
-func NewSQLiteRepositoryWithDB(db *sql.DB) Repository {
-	return &sqliteRepository{
-		getDB: func() (*sql.DB, error) {
-			return db, nil
-		},
-	}
+// NewSQLiteRepository creates a new SQLite repository
+func NewSQLiteRepository() Repository {
+	return &sqliteRepository{}
 }
 
 // GetUserByID retrieves a user by ID
 func (r *sqliteRepository) GetUserByID(userID string) (*User, error) {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -66,7 +57,7 @@ func (r *sqliteRepository) GetUserByID(userID string) (*User, error) {
 
 // GetUserByEmail retrieves a user by email
 func (r *sqliteRepository) GetUserByEmail(email string) (*User, error) {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -119,7 +110,7 @@ func (r *sqliteRepository) GetUserByEmail(email string) (*User, error) {
 
 // CreateUser creates a new user
 func (r *sqliteRepository) CreateUser(req CreateUserRequest) (*User, error) {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -162,7 +153,7 @@ func (r *sqliteRepository) CreateUser(req CreateUserRequest) (*User, error) {
 
 // UpdateUser updates an existing user
 func (r *sqliteRepository) UpdateUser(req UpdateUserRequest) (*User, error) {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -216,7 +207,7 @@ func (r *sqliteRepository) UpdateUser(req UpdateUserRequest) (*User, error) {
 
 // DeleteUser deletes a user by ID
 func (r *sqliteRepository) DeleteUser(userID string) error {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -243,7 +234,7 @@ func (r *sqliteRepository) DeleteUser(userID string) error {
 
 // GetAPIKey retrieves the API key for a user
 func (r *sqliteRepository) GetAPIKey(userID string) (string, error) {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return "", fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -265,7 +256,7 @@ func (r *sqliteRepository) GetAPIKey(userID string) (string, error) {
 
 // UpsertAPIKey creates or updates the API key for a user
 func (r *sqliteRepository) UpsertAPIKey(userID, email, apiKey string) error {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -307,7 +298,7 @@ func (r *sqliteRepository) UpsertAPIKey(userID, email, apiKey string) error {
 
 // GetUserByAPIKey retrieves a user by their API key
 func (r *sqliteRepository) GetUserByAPIKey(apiKey string) (*User, error) {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}
@@ -342,7 +333,7 @@ func (r *sqliteRepository) GetUserByAPIKey(apiKey string) (*User, error) {
 
 // ListUsers retrieves a list of users with pagination
 func (r *sqliteRepository) ListUsers(ctx context.Context, limit, offset int) ([]*User, error) {
-	db, err := r.getDB()
+	db, err := database.GetDB()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get database connection: %w", err)
 	}

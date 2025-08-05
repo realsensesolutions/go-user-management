@@ -38,7 +38,7 @@ func TestStateRepository_StoreAndValidateState(t *testing.T) {
 	}
 
 	// Create state repository using the service pattern
-	stateRepo := NewSQLiteStateRepository(database.GetDB)
+	stateRepo := NewSQLiteStateRepository()
 
 	// Test data
 	testState := "test-state-12345"

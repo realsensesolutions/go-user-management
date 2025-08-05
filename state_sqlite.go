@@ -12,29 +12,18 @@ import (
 
 // SQLiteStateRepository handles OAuth state persistence with SQLite
 type SQLiteStateRepository struct {
-	getDBFunc func() (*sql.DB, error)
+	// No dependencies - uses database.GetDB() directly like all other repositories
 }
 
 // NewSQLiteStateRepository creates a new SQLite-based state repository
-func NewSQLiteStateRepository(getDBFunc func() (*sql.DB, error)) StateRepository {
-	return &SQLiteStateRepository{
-		getDBFunc: getDBFunc,
-	}
-}
-
-// NewSQLiteStateRepositoryWithDB creates a new SQLite-based state repository with an existing database connection
-func NewSQLiteStateRepositoryWithDB(db *sql.DB) StateRepository {
-	return &SQLiteStateRepository{
-		getDBFunc: func() (*sql.DB, error) {
-			return db, nil
-		},
-	}
+func NewSQLiteStateRepository() StateRepository {
+	return &SQLiteStateRepository{}
 }
 
 // StoreState stores an OAuth state with optional redirect URL
 func (r *SQLiteStateRepository) StoreState(state string, redirectURL string, expiresAt time.Time) error {
 	// Get fresh database connection
-	db, err := r.getDBFunc()
+	db, err := database.GetDB()
 	if err != nil {
 		return err
 	}
@@ -64,7 +53,7 @@ func (r *SQLiteStateRepository) StoreState(state string, redirectURL string, exp
 // ValidateAndRemoveState validates a state and returns the associated redirect URL
 func (r *SQLiteStateRepository) ValidateAndRemoveState(state string) (string, bool) {
 	// Get fresh database connection
-	db, err := r.getDBFunc()
+	db, err := database.GetDB()
 	if err != nil {
 		return "", false
 	}
@@ -104,7 +93,7 @@ func (r *SQLiteStateRepository) ValidateAndRemoveState(state string) (string, bo
 // CleanupExpiredStates removes expired OAuth states
 func (r *SQLiteStateRepository) CleanupExpiredStates() error {
 	// Get fresh database connection
-	db, err := r.getDBFunc()
+	db, err := database.GetDB()
 	if err != nil {
 		return err
 	}
