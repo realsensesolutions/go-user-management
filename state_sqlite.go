@@ -22,6 +22,15 @@ func NewSQLiteStateRepository(getDBFunc func() (*sql.DB, error)) StateRepository
 	}
 }
 
+// NewSQLiteStateRepositoryWithDB creates a new SQLite-based state repository with an existing database connection
+func NewSQLiteStateRepositoryWithDB(db *sql.DB) StateRepository {
+	return &SQLiteStateRepository{
+		getDBFunc: func() (*sql.DB, error) {
+			return db, nil
+		},
+	}
+}
+
 // StoreState stores an OAuth state with optional redirect URL
 func (r *SQLiteStateRepository) StoreState(state string, redirectURL string, expiresAt time.Time) error {
 	// Get fresh database connection
