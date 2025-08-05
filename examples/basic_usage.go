@@ -19,7 +19,7 @@ func main() {
 	}
 	defer os.Remove(tmpFile.Name())
 	tmpFile.Close()
-	
+
 	// Set DATABASE_FILE environment variable so go-database can find it
 	os.Setenv("DATABASE_FILE", tmpFile.Name())
 
@@ -85,4 +85,3 @@ func main() {
 	}
 	fmt.Printf("Found %d users\n", len(users))
 }
-

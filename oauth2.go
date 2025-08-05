@@ -35,26 +35,39 @@ func NewOAuth2Service(userService Service, stateRepo StateRepository, config *OA
 
 // GenerateAuthURL generates an OAuth2 authorization URL with state management
 func (s *OAuth2Service) GenerateAuthURL(redirectURL string) (string, error) {
+	log.Printf("🔍 [OAuth2Service] Starting GenerateAuthURL for redirectURL: %s", redirectURL)
+
 	// Initialize OAuth2 config
 	oauth2Config, err := s.createOAuth2Config()
 	if err != nil {
+		log.Printf("❌ [OAuth2Service] Failed to initialize OAuth2 config: %v", err)
 		return "", fmt.Errorf("failed to initialize OAuth2 config: %w", err)
 	}
+	log.Printf("✅ [OAuth2Service] OAuth2 config initialized successfully")
 
 	// Generate secure state parameter
 	state, err := GenerateSecureState()
 	if err != nil {
+		log.Printf("❌ [OAuth2Service] Failed to generate state: %v", err)
 		return "", fmt.Errorf("failed to generate state: %w", err)
 	}
+	log.Printf("✅ [OAuth2Service] Generated secure state: %s", state[:8]+"...")
 
 	// Store state with expiration (5 minutes) and redirect URL
+	log.Printf("🔄 [OAuth2Service] About to store state in repository...")
+	startTime := time.Now()
 	err = s.stateRepo.StoreState(state, redirectURL, time.Now().Add(5*time.Minute))
+	duration := time.Since(startTime)
+
 	if err != nil {
+		log.Printf("❌ [OAuth2Service] Failed to store state after %v: %v", duration, err)
 		return "", fmt.Errorf("failed to store state: %w", err)
 	}
+	log.Printf("✅ [OAuth2Service] State stored successfully in %v", duration)
 
 	// Generate authorization URL
 	authURL := oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	log.Printf("✅ [OAuth2Service] Generated auth URL successfully")
 	return authURL, nil
 }
 
