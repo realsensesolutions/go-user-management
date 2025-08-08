@@ -1,12 +1,12 @@
 # go-user-management 🚀
 
-A production-ready user management package for Go applications with **simplified integration**. Provides self-contained authentication middleware, OAuth2/OIDC setup, user CRUD operations, API key management, and database migrations.
+A production-ready user management package for Go applications with **simplified integration**. Provides self-contained authentication middleware, OAuth2/OIDC setup, complete user management API, API key management, and database migrations.
 
 ## ✨ Core Features (Production-Used)
 
 - **🔐 Self-Contained Auth**: Zero-config middleware with internal initialization
 - **⚡ OAuth2/OIDC Setup**: Complete auth routes with single function call
-- **👥 Essential User Operations**: Create, retrieve users with role-based access  
+- **👥 User Management API**: Self-contained CRUD routes with built-in security
 - **🔑 API Key Management**: Generate, validate, and manage API keys
 - **🗄️ Database Migrations**: Embedded SQL migrations with auto-migration support
 - **📦 Repository Pattern**: Clean separation with SQLite implementation
@@ -114,6 +114,39 @@ func setupAdvancedAuth() {
     })
 }
 ```
+
+### User Management API Routes
+
+In addition to authentication, you can also register user management CRUD routes:
+
+```go
+func setupUserManagement() {
+    r := chi.NewRouter()
+    
+    // Setup authentication first
+    err := user.SetupAuthRoutes(r, oauthConfig)
+    if err != nil {
+        log.Fatal("Auth setup failed:", err)
+    }
+    
+    // Add user management routes (self-contained, no dependencies!)
+    user.RegisterUserRoutes(r, nil) // Uses default auth config
+    
+    // This automatically creates these protected routes:
+    // GET    /api/users/me        - Get current user profile
+    // GET    /api/users/{id}      - Get user by ID (admin or self only)  
+    // PUT    /api/users/me        - Update current user profile
+    // POST   /api/users/api-key   - Generate new API key
+    // GET    /api/users/api-key   - Get current API key
+    // GET    /api/users           - List users (admin only)
+}
+```
+
+**Key Benefits:**
+- **Zero Configuration**: Service and repository created internally
+- **Built-in Security**: All routes require authentication automatically
+- **Role-based Access**: Admin-only and self-access controls built-in
+- **API Keys**: Built-in API key generation and management
 
 ### Basic User Service (Without OAuth2)
 
@@ -251,8 +284,11 @@ type Service interface {
 ### Authentication Functions
 
 ```go
-// OAuth2/OIDC Setup
+// OAuth2/OIDC Setup (complete auth flow)
 func SetupAuthRoutes(r chi.Router, config OAuthConfig) error
+
+// User Management Routes (CRUD operations)
+func RegisterUserRoutes(r chi.Router, authConfig *AuthConfig) 
 
 // Self-contained middleware (no parameters needed!)
 func RequireAuthMiddleware() func(http.Handler) http.Handler
@@ -351,9 +387,14 @@ err := user.SetupAuthRoutes(r, oauthConfig)
 // GET  /api/auth/login      - Initiate login flow  
 // GET  /api/auth/logout     - Logout handler
 // GET  /api/auth/profile    - Get user profile (protected)
+
+// Optional: Add user management CRUD routes
+user.RegisterUserRoutes(r, nil) // Self-contained user management API
 ```
 
 **Benefits**: Zero boilerplate, automatic user creation, role assignment, and session management.
+
+**Pro Tip**: Combine `SetupAuthRoutes()` with `RegisterUserRoutes()` for a complete user management system with just two function calls!
 
 ### Custom Repository
 
@@ -385,7 +426,27 @@ service := user.NewService(myCustomRepo)
 - [Middleware Integration](examples/middleware_example.go) - HTTP middleware setup
 - [OIDC Integration](examples/oidc_example.go) - Token validation with auto-user creation
 
-## 🔄 Migration from v1.12.x to v1.13.0
+## 🔄 Migration Guide
+
+### v1.13.x to v1.15.0 (Latest)
+
+**New Features:**
+- ✨ **Self-contained user management routes**: `RegisterUserRoutes(r, authConfig)`
+- 🚀 **Zero-dependency service creation**: No need to manage Service/Repository instances
+- 📋 **Built-in CRUD API**: Complete user management REST API
+
+**Migration (Optional - for new user management features):**
+```go
+// Add this line after SetupAuthRoutes() for complete user management
+user.RegisterUserRoutes(r, nil) // Self-contained, zero config needed!
+```
+
+**Installation:**
+```bash
+go get github.com/realsensesolutions/go-user-management@v1.15.0
+```
+
+### v1.12.x to v1.13.0
 
 **Breaking Changes Summary:**
 
@@ -406,13 +467,14 @@ service := user.NewService(myCustomRepo)
 ## 🤝 Production Usage
 
 This package is used in production at RealSense Solutions and handles:
-- **90% less integration code** compared to v1.x
+- **95% less integration code** compared to v1.x
 - Authentication for thousands of users with **zero-config middleware**
 - Complete OAuth2/OIDC flows with **single function call**
+- User management CRUD operations with **self-contained service**
 - API key management for service-to-service communication  
 - OIDC token validation with auto-user provisioning
 - **Custom role assignment** via function injection
-- Role-based access control
+- Role-based access control with built-in admin/user permissions
 
 ## 📄 License
 

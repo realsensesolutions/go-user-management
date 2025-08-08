@@ -63,60 +63,45 @@ func writeError(w http.ResponseWriter, status int, message string, details map[s
 	})
 }
 
-// RouteConfig holds configuration for route registration
-type RouteConfig struct {
-	Service      Service
-	AuthConfig   *AuthConfig
-	PathPrefix   string // Default: "/api/users"
-	IncludeEmail bool   // Whether to include email in user responses (default: false for privacy)
-}
-
-// DefaultRouteConfig returns a default route configuration
-func DefaultRouteConfig(service Service, authConfig *AuthConfig) *RouteConfig {
-	return &RouteConfig{
-		Service:      service,
-		AuthConfig:   authConfig,
-		PathPrefix:   "/api/users",
-		IncludeEmail: false, // Default to not exposing email for privacy
-	}
-}
-
 // RegisterUserRoutes registers standard user management routes
-func RegisterUserRoutes(r chi.Router, config *RouteConfig) {
-	if config == nil {
-		panic("route config is required")
+func RegisterUserRoutes(r chi.Router, authConfig *AuthConfig) {
+	// Create user service internally using SQLite repository
+	repo := NewSQLiteRepository()
+	service := NewService(repo)
+
+	if authConfig == nil {
+		authConfig = DefaultAuthConfig(service)
 	}
 
-	if config.AuthConfig == nil {
-		config.AuthConfig = DefaultAuthConfig(config.Service)
-	}
+	// authConfig is reserved for future use when additional auth configuration is needed
+	_ = authConfig
 
 	// Apply authentication middleware to user routes
-	r.Route(config.PathPrefix, func(r chi.Router) {
+	r.Route("/api/users", func(r chi.Router) {
 		r.Use(RequireAuthMiddleware())
 
 		// GET /api/users/me - Get current user profile
-		r.Get("/me", config.getCurrentUserHandler())
+		r.Get("/me", getCurrentUserHandler(service))
 
 		// GET /api/users/{id} - Get user by ID (admin only or self)
-		r.Get("/{id}", config.getUserByIDHandler())
+		r.Get("/{id}", getUserByIDHandler(service))
 
 		// PUT /api/users/me - Update current user profile
-		r.Put("/me", config.updateCurrentUserHandler())
+		r.Put("/me", updateCurrentUserHandler(service))
 
 		// POST /api/users/api-key - Generate new API key for current user
-		r.Post("/api-key", config.generateAPIKeyHandler())
+		r.Post("/api-key", generateAPIKeyHandler(service))
 
 		// GET /api/users/api-key - Get current API key for current user
-		r.Get("/api-key", config.getAPIKeyHandler())
+		r.Get("/api-key", getAPIKeyHandler(service))
 
 		// GET /api/users - List users (admin only)
-		r.Get("/", config.listUsersHandler())
+		r.Get("/", listUsersHandler(service, false)) // Default to not include email for privacy
 	})
 }
 
 // getCurrentUserHandler returns the current authenticated user
-func (config *RouteConfig) getCurrentUserHandler() http.HandlerFunc {
+func getCurrentUserHandler(service Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		user := MustGetUserFromContext(r)
 		response := convertUserToResponse(user, true) // Include email for own profile
@@ -125,7 +110,7 @@ func (config *RouteConfig) getCurrentUserHandler() http.HandlerFunc {
 }
 
 // getUserByIDHandler returns a user by ID (with access control)
-func (config *RouteConfig) getUserByIDHandler() http.HandlerFunc {
+func getUserByIDHandler(service Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		requestedUserID := chi.URLParam(r, "id")
 		currentUser := MustGetUserFromContext(r)
@@ -138,7 +123,7 @@ func (config *RouteConfig) getUserByIDHandler() http.HandlerFunc {
 			return
 		}
 
-		user, err := config.Service.GetUserByID(r.Context(), requestedUserID)
+		user, err := service.GetUserByID(r.Context(), requestedUserID)
 		if err != nil {
 			if err == ErrUserNotFound {
 				writeError(w, http.StatusNotFound, "User not found", nil)
@@ -156,7 +141,7 @@ func (config *RouteConfig) getUserByIDHandler() http.HandlerFunc {
 }
 
 // updateCurrentUserHandler updates the current user's profile
-func (config *RouteConfig) updateCurrentUserHandler() http.HandlerFunc {
+func updateCurrentUserHandler(service Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		currentUser := MustGetUserFromContext(r)
 
@@ -171,7 +156,7 @@ func (config *RouteConfig) updateCurrentUserHandler() http.HandlerFunc {
 		// Set the user ID to current user (prevent privilege escalation)
 		updateReq.ID = currentUser.ID
 
-		updatedUser, err := config.Service.UpdateUser(r.Context(), updateReq)
+		updatedUser, err := service.UpdateUser(r.Context(), updateReq)
 		if err != nil {
 			if err == ErrUserNotFound {
 				writeError(w, http.StatusNotFound, "User not found", nil)
@@ -189,11 +174,11 @@ func (config *RouteConfig) updateCurrentUserHandler() http.HandlerFunc {
 }
 
 // generateAPIKeyHandler generates a new API key for the current user
-func (config *RouteConfig) generateAPIKeyHandler() http.HandlerFunc {
+func generateAPIKeyHandler(service Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		currentUser := MustGetUserFromContext(r)
 
-		apiKey, err := config.Service.GenerateAPIKey(r.Context(), currentUser.ID, currentUser.Email)
+		apiKey, err := service.GenerateAPIKey(r.Context(), currentUser.ID, currentUser.Email)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to generate API key", map[string]string{
 				"error": err.Error(),
@@ -208,11 +193,11 @@ func (config *RouteConfig) generateAPIKeyHandler() http.HandlerFunc {
 }
 
 // getAPIKeyHandler returns the current API key for the user
-func (config *RouteConfig) getAPIKeyHandler() http.HandlerFunc {
+func getAPIKeyHandler(service Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		currentUser := MustGetUserFromContext(r)
 
-		apiKey, err := config.Service.GetAPIKey(r.Context(), currentUser.ID)
+		apiKey, err := service.GetAPIKey(r.Context(), currentUser.ID)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to retrieve API key", map[string]string{
 				"error": err.Error(),
@@ -234,7 +219,7 @@ func (config *RouteConfig) getAPIKeyHandler() http.HandlerFunc {
 }
 
 // listUsersHandler lists users (admin only)
-func (config *RouteConfig) listUsersHandler() http.HandlerFunc {
+func listUsersHandler(service Service, includeEmail bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		currentUser := MustGetUserFromContext(r)
 
@@ -264,7 +249,7 @@ func (config *RouteConfig) listUsersHandler() http.HandlerFunc {
 			}
 		}
 
-		users, err := config.Service.ListUsers(r.Context(), limit, offset)
+		users, err := service.ListUsers(r.Context(), limit, offset)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Failed to list users", map[string]string{
 				"error": err.Error(),
@@ -275,7 +260,7 @@ func (config *RouteConfig) listUsersHandler() http.HandlerFunc {
 		// Convert users to response format
 		var responses []*UserResponse
 		for _, user := range users {
-			responses = append(responses, convertUserToResponse(user, config.IncludeEmail))
+			responses = append(responses, convertUserToResponse(user, includeEmail))
 		}
 
 		writeJSON(w, http.StatusOK, map[string]interface{}{
