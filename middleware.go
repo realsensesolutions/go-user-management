@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -30,18 +31,13 @@ type Claims struct {
 	Provider   string `json:"provider"`    // Auth provider (jwt, api_key)
 }
 
-// OIDCTokenValidator represents a function that can validate OIDC/JWT tokens
-// This allows projects to inject their own JWT validation logic
-type OIDCTokenValidator func(ctx context.Context, tokenString string) (*Claims, error)
-
 // AuthConfig holds configuration for authentication middleware
 type AuthConfig struct {
-	Service       Service                                                 // User service for API key validation
-	OIDCValidator OIDCTokenValidator                                      // Optional JWT token validator
-	CookieName    string                                                  // JWT cookie name (default: "jwt")
-	APIKeyHeader  string                                                  // API key header name (default: "X-Api-Key")
-	RequireAuth   bool                                                    // Whether auth is required (default: true)
-	ErrorHandler  func(w http.ResponseWriter, r *http.Request, err error) // Custom error handler
+	Service      Service                                                 // User service for API key validation
+	CookieName   string                                                  // JWT cookie name (default: "jwt")
+	APIKeyHeader string                                                  // API key header name (default: "X-Api-Key")
+	RequireAuth  bool                                                    // Whether auth is required (default: true)
+	ErrorHandler func(w http.ResponseWriter, r *http.Request, err error) // Custom error handler
 }
 
 // DefaultAuthConfig returns a default authentication configuration
@@ -58,6 +54,15 @@ func DefaultAuthConfig(service Service) *AuthConfig {
 // defaultErrorHandler provides a default error response
 func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
+}
+
+// createHardcodedOIDCConfig creates an OIDC config from environment variables
+func createHardcodedOIDCConfig() *OAuthConfig {
+	return &OAuthConfig{
+		ClientID:   os.Getenv("COGNITO_CLIENT_ID"),
+		UserPoolID: os.Getenv("COGNITO_USER_POOL_ID"),
+		Region:     os.Getenv("AWS_REGION"),
+	}
 }
 
 // validateAPIKey validates an API key and returns claims
@@ -100,42 +105,41 @@ func RequireAuthMiddleware() func(http.Handler) http.Handler {
 			var user *User
 			var err error
 
-			// First try JWT cookie if validator is provided
-			if config.OIDCValidator != nil {
-				cookie, cookieErr := r.Cookie(config.CookieName)
-				if cookieErr == nil {
-					claims, err = config.OIDCValidator(r.Context(), cookie.Value)
-					if err == nil && claims != nil {
-						// JWT is valid, get user data
-						user, err = config.Service.GetUserByEmail(r.Context(), claims.Email)
-						if err == nil {
-							// Priority 1: Use API key from JWT claims (Cognito)
-							if claims.APIKey != "" {
-								// Sync JWT key with database if different
-								if user.APIKey != claims.APIKey {
-									err := config.Service.UpdateAPIKey(r.Context(), user.Email, user.Email, claims.APIKey)
-									if err == nil {
-										user.APIKey = claims.APIKey
-									}
-								}
-							} else if user.APIKey != "" {
-								// Priority 2: Use API key from database
-								claims.APIKey = user.APIKey
-							} else {
-								// Priority 3: Generate new API key if both are empty
-								apiKey, err := config.Service.GenerateAPIKey(r.Context(), user.Email, user.Email)
+			// First try JWT cookie with hardcoded OIDC validation
+			cookie, cookieErr := r.Cookie(config.CookieName)
+			if cookieErr == nil {
+				oidcConfig := createHardcodedOIDCConfig()
+				claims, err = ValidateOIDCTokenFromOAuthConfig(r.Context(), cookie.Value, oidcConfig)
+				if err == nil && claims != nil {
+					// JWT is valid, get user data
+					user, err = config.Service.GetUserByEmail(r.Context(), claims.Email)
+					if err == nil {
+						// Priority 1: Use API key from JWT claims (Cognito)
+						if claims.APIKey != "" {
+							// Sync JWT key with database if different
+							if user.APIKey != claims.APIKey {
+								err := config.Service.UpdateAPIKey(r.Context(), user.Email, user.Email, claims.APIKey)
 								if err == nil {
-									user.APIKey = apiKey
-									claims.APIKey = apiKey
+									user.APIKey = claims.APIKey
 								}
 							}
-
-							// Add user to context and proceed
-							ctx := context.WithValue(r.Context(), ClaimsKey, claims)
-							ctx = context.WithValue(ctx, UserKey, user)
-							next.ServeHTTP(w, r.WithContext(ctx))
-							return
+						} else if user.APIKey != "" {
+							// Priority 2: Use API key from database
+							claims.APIKey = user.APIKey
+						} else {
+							// Priority 3: Generate new API key if both are empty
+							apiKey, err := config.Service.GenerateAPIKey(r.Context(), user.Email, user.Email)
+							if err == nil {
+								user.APIKey = apiKey
+								claims.APIKey = apiKey
+							}
 						}
+
+						// Add user to context and proceed
+						ctx := context.WithValue(r.Context(), ClaimsKey, claims)
+						ctx = context.WithValue(ctx, UserKey, user)
+						next.ServeHTTP(w, r.WithContext(ctx))
+						return
 					}
 				}
 			}
@@ -186,42 +190,41 @@ func OptionalAuthMiddleware() func(http.Handler) http.Handler {
 			var user *User
 			var err error
 
-			// First try JWT cookie if validator is provided
-			if config.OIDCValidator != nil {
-				cookie, cookieErr := r.Cookie(config.CookieName)
-				if cookieErr == nil {
-					claims, err = config.OIDCValidator(r.Context(), cookie.Value)
-					if err == nil && claims != nil {
-						// JWT is valid, get user data
-						user, err = config.Service.GetUserByEmail(r.Context(), claims.Email)
-						if err == nil {
-							// Priority 1: Use API key from JWT claims (Cognito)
-							if claims.APIKey != "" {
-								// Sync JWT key with database if different
-								if user.APIKey != claims.APIKey {
-									err := config.Service.UpdateAPIKey(r.Context(), user.Email, user.Email, claims.APIKey)
-									if err == nil {
-										user.APIKey = claims.APIKey
-									}
-								}
-							} else if user.APIKey != "" {
-								// Priority 2: Use API key from database
-								claims.APIKey = user.APIKey
-							} else {
-								// Priority 3: Generate new API key if both are empty
-								apiKey, err := config.Service.GenerateAPIKey(r.Context(), user.Email, user.Email)
+			// First try JWT cookie with hardcoded OIDC validation
+			cookie, cookieErr := r.Cookie(config.CookieName)
+			if cookieErr == nil {
+				oidcConfig := createHardcodedOIDCConfig()
+				claims, err = ValidateOIDCTokenFromOAuthConfig(r.Context(), cookie.Value, oidcConfig)
+				if err == nil && claims != nil {
+					// JWT is valid, get user data
+					user, err = config.Service.GetUserByEmail(r.Context(), claims.Email)
+					if err == nil {
+						// Priority 1: Use API key from JWT claims (Cognito)
+						if claims.APIKey != "" {
+							// Sync JWT key with database if different
+							if user.APIKey != claims.APIKey {
+								err := config.Service.UpdateAPIKey(r.Context(), user.Email, user.Email, claims.APIKey)
 								if err == nil {
-									user.APIKey = apiKey
-									claims.APIKey = apiKey
+									user.APIKey = claims.APIKey
 								}
 							}
-
-							// Add user to context and proceed
-							ctx := context.WithValue(r.Context(), ClaimsKey, claims)
-							ctx = context.WithValue(ctx, UserKey, user)
-							next.ServeHTTP(w, r.WithContext(ctx))
-							return
+						} else if user.APIKey != "" {
+							// Priority 2: Use API key from database
+							claims.APIKey = user.APIKey
+						} else {
+							// Priority 3: Generate new API key if both are empty
+							apiKey, err := config.Service.GenerateAPIKey(r.Context(), user.Email, user.Email)
+							if err == nil {
+								user.APIKey = apiKey
+								claims.APIKey = apiKey
+							}
 						}
+
+						// Add user to context and proceed
+						ctx := context.WithValue(r.Context(), ClaimsKey, claims)
+						ctx = context.WithValue(ctx, UserKey, user)
+						next.ServeHTTP(w, r.WithContext(ctx))
+						return
 					}
 				}
 			}
