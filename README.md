@@ -1,4 +1,4 @@
-# go-user-management v2.0 🚀
+# go-user-management 🚀
 
 A production-ready user management package for Go applications with **simplified integration**. Provides self-contained authentication middleware, OAuth2/OIDC setup, user CRUD operations, API key management, and database migrations.
 
@@ -11,12 +11,12 @@ A production-ready user management package for Go applications with **simplified
 - **🗄️ Database Migrations**: Embedded SQL migrations with auto-migration support
 - **📦 Repository Pattern**: Clean separation with SQLite implementation
 
-## 🚀 Quick Start (v2.0.0)
+## 🚀 Quick Start
 
 ### Installation
 
 ```bash
-go get github.com/realsensesolutions/go-user-management/v2@latest
+go get github.com/realsensesolutions/go-user-management@latest
 ```
 
 ### Complete OAuth2/OIDC Setup (Super Simple!)
@@ -28,7 +28,7 @@ import (
     "os"
     "log"
     
-    user "github.com/realsensesolutions/go-user-management/v2"
+    user "github.com/realsensesolutions/go-user-management"
     database "github.com/realsensesolutions/go-database"
     "github.com/go-chi/chi/v5"
 )
@@ -203,7 +203,7 @@ Migrations are automatically registered when you import the package:
 
 ```go
 import (
-    _ "github.com/realsensesolutions/go-user-management/v2" // Auto-registers migrations
+    _ "github.com/realsensesolutions/go-user-management" // Auto-registers migrations
     database "github.com/realsensesolutions/go-database"
 )
 
@@ -251,10 +251,10 @@ type Service interface {
 ### Authentication Functions
 
 ```go
-// OAuth2/OIDC Setup (v2.0.0)
+// OAuth2/OIDC Setup
 func SetupAuthRoutes(r chi.Router, config OAuthConfig) error
 
-// Self-contained middleware (v2.0.0 - no parameters needed!)
+// Self-contained middleware (no parameters needed!)
 func RequireAuthMiddleware() func(http.Handler) http.Handler
 func OptionalAuthMiddleware() func(http.Handler) http.Handler  
 func APIKeyOnlyMiddleware() func(http.Handler) http.Handler
@@ -308,7 +308,7 @@ type Claims struct {
     Provider   string `json:"provider"`
 }
 
-// OAuth2/OIDC Configuration (v2.0.0)
+// OAuth2/OIDC Configuration
 type OAuthConfig struct {
     ClientID     string   `json:"clientId"`
     ClientSecret string   `json:"clientSecret"`
@@ -337,12 +337,12 @@ type OIDCClaims struct {
 
 ## 🌟 Advanced Features
 
-### Complete OAuth2 Flow (v2.0.0)
+### Complete OAuth2 Flow
 
 The `SetupAuthRoutes()` function provides a complete OAuth2/OIDC authentication flow:
 
 ```go
-import user "github.com/realsensesolutions/go-user-management/v2"
+import user "github.com/realsensesolutions/go-user-management"
 
 // Setup complete OAuth2 flow
 err := user.SetupAuthRoutes(r, oauthConfig)
@@ -385,24 +385,23 @@ service := user.NewService(myCustomRepo)
 - [Middleware Integration](examples/middleware_example.go) - HTTP middleware setup
 - [OIDC Integration](examples/oidc_example.go) - Token validation with auto-user creation
 
-## 🔄 Migration from v1.x to v2.0.0
+## 🔄 Migration from v1.12.x to v1.13.0
 
 **Breaking Changes Summary:**
 
-| v1.x (Old) | v2.0.0 (New) |
+| v1.12.x (Old) | v1.13.0 (New) |
 |------------|--------------|
 | `CognitoConfig` + `OAuth2Config` | Single `OAuthConfig` |
 | `RequireAuthMiddleware(config)` | `RequireAuthMiddleware()` |
 | Manual route setup | `SetupAuthRoutes(r, config)` |
 | External helper functions | All internalized |
-| `import go-user-management` | `import go-user-management/v2` |
 
 **Migration Steps:**
-1. Update import: `github.com/realsensesolutions/go-user-management/v2`
-2. Replace configs with single `OAuthConfig`
-3. Replace manual route setup with `SetupAuthRoutes()`
-4. Remove parameters from middleware calls
-5. Remove external helper function dependencies
+1. Replace configs with single `OAuthConfig`
+2. Replace manual route setup with `SetupAuthRoutes()`
+3. Remove parameters from middleware calls
+4. Remove external helper function dependencies
+5. Update to latest: `go get github.com/realsensesolutions/go-user-management@latest`
 
 ## 🤝 Production Usage
 
