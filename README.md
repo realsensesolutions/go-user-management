@@ -59,13 +59,16 @@ func setupAuthentication() {
         CalculateDefaultRole: calculateUserRole, // Custom role logic
     }
     
-    // 4. Setup ALL auth routes (login, logout, callback, profile) - ONE LINE!
-    err := user.SetupAuthRoutes(r, oauthConfig)
+    // 4. Set OAuth config globally
+    user.SetOAuthConfig(&oauthConfig)
+    
+    // 5. Setup ALL auth routes (login, logout, callback, profile) - ONE LINE!
+    err := user.SetupAuthRoutes(r)
     if err != nil {
         log.Fatal("Auth setup failed:", err)
     }
     
-    // 5. Add authentication to protected routes - ZERO CONFIG!
+    // 6. Add authentication to protected routes - ZERO CONFIG!
     r.Group(func(r chi.Router) {
         r.Use(user.RequireAuthMiddleware()) // That's it! 🎯
         
@@ -123,8 +126,11 @@ In addition to authentication, you can also register user management CRUD routes
 func setupUserManagement() {
     r := chi.NewRouter()
     
-    // Setup authentication first
-    err := user.SetupAuthRoutes(r, oauthConfig)
+    // Setup OAuth configuration first
+    user.SetOAuthConfig(&oauthConfig)
+    
+    // Setup authentication routes
+    err := user.SetupAuthRoutes(r)
     if err != nil {
         log.Fatal("Auth setup failed:", err)
     }
@@ -147,6 +153,30 @@ func setupUserManagement() {
 - **Built-in Security**: All routes require authentication automatically
 - **Role-based Access**: Admin-only and self-access controls built-in
 - **API Keys**: Built-in API key generation and management
+
+### OAuth Configuration (Required)
+
+You must configure OAuth settings programmatically at startup:
+
+```go
+func main() {
+    // Set OAuth config at startup (REQUIRED)
+    user.SetOAuthConfig(&user.OAuthConfig{
+        ClientID:     "your_cognito_client_id",
+        UserPoolID:   "your_cognito_user_pool_id", 
+        Region:       "us-east-1",
+        ClientSecret: "your_client_secret", // Optional
+        RedirectURI:  "https://yourapp.com/callback", // For OAuth flows
+        FrontEndURL:  "https://yourapp.com", // For OAuth flows
+        Scopes:       []string{"openid", "email", "profile"}, // For OAuth flows
+    })
+    
+    // Now middleware automatically uses this config
+    r.Use(user.RequireAuthMiddleware()) // Uses the config you just set
+}
+```
+
+**Important**: You must call `SetOAuthConfig()` before using any authentication functions or middleware. The application will panic if no configuration is provided.
 
 ### Basic User Service (Without OAuth2)
 
@@ -285,10 +315,14 @@ type Service interface {
 
 ```go
 // OAuth2/OIDC Setup (complete auth flow)
-func SetupAuthRoutes(r chi.Router, config OAuthConfig) error
+func SetupAuthRoutes(r chi.Router) error
 
 // User Management Routes (CRUD operations)
 func RegisterUserRoutes(r chi.Router, authConfig *AuthConfig) 
+
+// OAuth Configuration (programmatic setup)
+func SetOAuthConfig(config *OAuthConfig)
+func GetOAuthConfig() *OAuthConfig
 
 // Self-contained middleware (no parameters needed!)
 func RequireAuthMiddleware() func(http.Handler) http.Handler
@@ -380,8 +414,11 @@ The `SetupAuthRoutes()` function provides a complete OAuth2/OIDC authentication 
 ```go
 import user "github.com/realsensesolutions/go-user-management"
 
+// Set OAuth config globally first
+user.SetOAuthConfig(&oauthConfig)
+
 // Setup complete OAuth2 flow
-err := user.SetupAuthRoutes(r, oauthConfig)
+err := user.SetupAuthRoutes(r)
 // This creates:
 // GET  /oauth2/idpresponse  - OAuth2 callback handler
 // GET  /api/auth/login      - Initiate login flow  
@@ -450,19 +487,20 @@ go get github.com/realsensesolutions/go-user-management@latest
 
 **Breaking Changes Summary:**
 
-| v1.12.x (Old) | v1.13.0 (New) |
+| v1.12.x (Old) | Latest (New) |
 |------------|--------------|
 | `CognitoConfig` + `OAuth2Config` | Single `OAuthConfig` |
 | `RequireAuthMiddleware(config)` | `RequireAuthMiddleware()` |
-| Manual route setup | `SetupAuthRoutes(r, config)` |
+| `SetupAuthRoutes(r, config)` | `SetOAuthConfig(&config)` + `SetupAuthRoutes(r)` |
 | External helper functions | All internalized |
 
 **Migration Steps:**
 1. Replace configs with single `OAuthConfig`
-2. Replace manual route setup with `SetupAuthRoutes()`
-3. Remove parameters from middleware calls
-4. Remove external helper function dependencies
-5. Update to latest: `go get github.com/realsensesolutions/go-user-management@latest`
+2. Use `SetOAuthConfig()` to set global configuration
+3. Replace manual route setup with `SetupAuthRoutes(r)` (note: no config parameter)
+4. Remove parameters from middleware calls
+5. Remove external helper function dependencies
+6. Update to latest: `go get github.com/realsensesolutions/go-user-management@latest`
 
 ## 🤝 Production Usage
 

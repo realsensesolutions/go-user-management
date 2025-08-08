@@ -265,11 +265,15 @@ func listUsersHandler(service Service, includeEmail bool) http.HandlerFunc {
 	}
 }
 
-// SetupAuthRoutes sets up all authentication routes using the provided OAuthConfig
+// SetupAuthRoutes sets up all authentication routes using the global OAuth configuration
 // This is the main entry point that replaces the complex manual setup
-func SetupAuthRoutes(r chi.Router, config OAuthConfig) error {
+// Note: You must call SetOAuthConfig() first to configure OAuth settings
+func SetupAuthRoutes(r chi.Router) error {
+	// Use global configuration (required)
+	config := getRequiredOIDCConfig()
+
 	// Validate configuration
-	if err := validateOAuthConfig(&config); err != nil {
+	if err := validateOAuthConfig(config); err != nil {
 		return fmt.Errorf("invalid OAuth configuration: %w", err)
 	}
 
@@ -281,13 +285,13 @@ func SetupAuthRoutes(r chi.Router, config OAuthConfig) error {
 	stateRepo := NewSQLiteStateRepository()
 
 	// Create OAuth2 service using the consolidated config
-	oauth2Service, err := createOAuth2ServiceFromOAuthConfig(userService, stateRepo, &config)
+	oauth2Service, err := createOAuth2ServiceFromOAuthConfig(userService, stateRepo, config)
 	if err != nil {
 		return fmt.Errorf("failed to create OAuth2 service: %w", err)
 	}
 
 	// Create OAuth2 handlers with internal helper functions
-	oauth2Handlers := createOAuth2HandlersFromOAuthConfig(oauth2Service, &config)
+	oauth2Handlers := createOAuth2HandlersFromOAuthConfig(oauth2Service, config)
 
 	// Setup authentication routes
 	r.Get("/oauth2/idpresponse", oauth2Handlers.CallbackHandler)

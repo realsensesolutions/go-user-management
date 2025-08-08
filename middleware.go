@@ -4,10 +4,25 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/go-chi/chi/v5"
 )
+
+var (
+	// Package-level OAuth configuration
+	globalOAuthConfig *OAuthConfig
+)
+
+// SetOAuthConfig sets the global OAuth configuration for OIDC validation
+// This allows consumers to configure OAuth settings programmatically instead of using environment variables
+func SetOAuthConfig(config *OAuthConfig) {
+	globalOAuthConfig = config
+}
+
+// GetOAuthConfig returns the current global OAuth configuration (for testing/debugging)
+func GetOAuthConfig() *OAuthConfig {
+	return globalOAuthConfig
+}
 
 // Define a custom type for the context key to avoid collisions
 type contextKey string
@@ -56,13 +71,12 @@ func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
 	http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
 }
 
-// createHardcodedOIDCConfig creates an OIDC config from environment variables
-func createHardcodedOIDCConfig() *OAuthConfig {
-	return &OAuthConfig{
-		ClientID:   os.Getenv("COGNITO_CLIENT_ID"),
-		UserPoolID: os.Getenv("COGNITO_USER_POOL_ID"),
-		Region:     os.Getenv("AWS_REGION"),
+// getRequiredOIDCConfig returns the global OIDC config or panics if not set
+func getRequiredOIDCConfig() *OAuthConfig {
+	if globalOAuthConfig == nil {
+		panic("OAuth configuration not set. Call user.SetOAuthConfig() before using authentication middleware or SetupAuthRoutes()")
 	}
+	return globalOAuthConfig
 }
 
 // validateAPIKey validates an API key and returns claims
@@ -105,10 +119,10 @@ func RequireAuthMiddleware() func(http.Handler) http.Handler {
 			var user *User
 			var err error
 
-			// First try JWT cookie with hardcoded OIDC validation
+			// First try JWT cookie with OIDC validation
 			cookie, cookieErr := r.Cookie(config.CookieName)
 			if cookieErr == nil {
-				oidcConfig := createHardcodedOIDCConfig()
+				oidcConfig := getRequiredOIDCConfig()
 				claims, err = ValidateOIDCTokenFromOAuthConfig(r.Context(), cookie.Value, oidcConfig)
 				if err == nil && claims != nil {
 					// JWT is valid, get user data
@@ -190,10 +204,10 @@ func OptionalAuthMiddleware() func(http.Handler) http.Handler {
 			var user *User
 			var err error
 
-			// First try JWT cookie with hardcoded OIDC validation
+			// First try JWT cookie with OIDC validation
 			cookie, cookieErr := r.Cookie(config.CookieName)
 			if cookieErr == nil {
-				oidcConfig := createHardcodedOIDCConfig()
+				oidcConfig := getRequiredOIDCConfig()
 				claims, err = ValidateOIDCTokenFromOAuthConfig(r.Context(), cookie.Value, oidcConfig)
 				if err == nil && claims != nil {
 					// JWT is valid, get user data
