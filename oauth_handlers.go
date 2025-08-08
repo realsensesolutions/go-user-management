@@ -21,17 +21,17 @@ const (
 // OAuth2Handlers provides HTTP handlers for OAuth2 flow
 type OAuth2Handlers struct {
 	oauth2Service   *OAuth2Service
-	cognitoConfig   *CognitoConfig
+	oauthConfig     *OAuthConfig
 	getFrontEndURL  func() string
 	getCookieDomain func() string
 	createJWTCookie func(token string, maxAge int, domain string) string
 }
 
 // NewOAuth2Handlers creates a new OAuth2 handlers instance
-func NewOAuth2Handlers(service *OAuth2Service, cognitoConfig *CognitoConfig, frontEndURL, cookieDomain func() string, createJWTCookie func(string, int, string) string) *OAuth2Handlers {
+func NewOAuth2Handlers(service *OAuth2Service, oauthConfig *OAuthConfig, frontEndURL, cookieDomain func() string, createJWTCookie func(string, int, string) string) *OAuth2Handlers {
 	return &OAuth2Handlers{
 		oauth2Service:   service,
-		cognitoConfig:   cognitoConfig,
+		oauthConfig:     oauthConfig,
 		getFrontEndURL:  frontEndURL,
 		getCookieDomain: cookieDomain,
 		createJWTCookie: createJWTCookie,
@@ -150,13 +150,13 @@ func (h *OAuth2Handlers) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Set-Cookie", clearCookie)
 
 	// If Cognito domain is configured, use Cognito logout URL
-	if h.cognitoConfig.Domain != "" && h.cognitoConfig.ClientID != "" {
+	if h.oauthConfig.Domain != "" && h.oauthConfig.ClientID != "" {
 		// URL encode the redirect URL to ensure it's properly formatted
 		encodedRedirectURL := url.QueryEscape(redirectURL)
 
 		// Construct Cognito logout URL
 		logoutURL := fmt.Sprintf("%s/logout?client_id=%s&logout_uri=%s",
-			h.cognitoConfig.Domain, h.cognitoConfig.ClientID, encodedRedirectURL)
+			h.oauthConfig.Domain, h.oauthConfig.ClientID, encodedRedirectURL)
 
 		log.Printf("🔗 Redirecting to Cognito logout: %s", logoutURL)
 		w.Header().Set("Location", logoutURL)

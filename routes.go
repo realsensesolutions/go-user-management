@@ -2,7 +2,10 @@ package user
 
 import (
 	"encoding/json"
+	"fmt"
+	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -90,7 +93,7 @@ func RegisterUserRoutes(r chi.Router, config *RouteConfig) {
 
 	// Apply authentication middleware to user routes
 	r.Route(config.PathPrefix, func(r chi.Router) {
-		r.Use(RequireAuthMiddleware(config.AuthConfig))
+		r.Use(RequireAuthMiddleware())
 
 		// GET /api/users/me - Get current user profile
 		r.Get("/me", config.getCurrentUserHandler())
@@ -281,5 +284,92 @@ func (config *RouteConfig) listUsersHandler() http.HandlerFunc {
 			"offset": offset,
 			"count":  len(responses),
 		})
+	}
+}
+
+// SetupAuthRoutes sets up all authentication routes using the provided OAuthConfig
+// This is the main entry point that replaces the complex manual setup
+func SetupAuthRoutes(r chi.Router, config OAuthConfig) error {
+	// Validate configuration
+	if err := validateOAuthConfig(&config); err != nil {
+		return fmt.Errorf("invalid OAuth configuration: %w", err)
+	}
+
+	// Create user service using SQLite (for now, could be configurable later)
+	repo := NewSQLiteRepository()
+	userService := NewService(repo)
+
+	// Create state repository
+	stateRepo := NewSQLiteStateRepository()
+
+	// Create OAuth2 service using the consolidated config
+	oauth2Service, err := createOAuth2ServiceFromOAuthConfig(userService, stateRepo, &config)
+	if err != nil {
+		return fmt.Errorf("failed to create OAuth2 service: %w", err)
+	}
+
+	// Create OAuth2 handlers with internal helper functions
+	oauth2Handlers := createOAuth2HandlersFromOAuthConfig(oauth2Service, &config)
+
+	// Setup authentication routes
+	r.Get("/oauth2/idpresponse", oauth2Handlers.CallbackHandler)
+	r.Get("/api/auth/login", oauth2Handlers.LoginHandler)
+	r.Get("/api/auth/logout", oauth2Handlers.LogoutHandler)
+
+	// Setup protected auth routes (requires authentication)
+	r.Route("/api/auth", func(r chi.Router) {
+		// Authentication middleware - everything handled internally
+		r.Use(RequireAuthMiddleware())
+		r.Get("/profile", createProfileHandler(userService))
+	})
+
+	log.Printf("✅ Authentication routes setup completed")
+	return nil
+}
+
+// createOAuth2ServiceFromOAuthConfig creates OAuth2Service from OAuthConfig
+func createOAuth2ServiceFromOAuthConfig(userService Service, stateRepo StateRepository, config *OAuthConfig) (*OAuth2Service, error) {
+	// Create OAuth2 service directly from OAuthConfig - no need for legacy conversion
+	return NewOAuth2ServiceFromOAuthConfig(userService, stateRepo, config)
+}
+
+// createOAuth2HandlersFromOAuthConfig creates OAuth2Handlers with internal helper functions
+func createOAuth2HandlersFromOAuthConfig(oauth2Service *OAuth2Service, config *OAuthConfig) *OAuth2Handlers {
+	// Extract cookie domain from FrontEndURL
+	frontEndURL, _ := url.Parse(config.FrontEndURL)
+	cookieDomain := frontEndURL.Hostname()
+
+	// Create handlers with internal helper functions
+	return &OAuth2Handlers{
+		oauth2Service:   oauth2Service,
+		oauthConfig:     config,
+		getFrontEndURL:  func() string { return config.FrontEndURL },
+		getCookieDomain: func() string { return cookieDomain },
+		createJWTCookie: CreateJWTCookie, // Use existing function
+	}
+}
+
+// createProfileHandler creates the profile endpoint handler
+func createProfileHandler(userService Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get user from context (set by auth middleware)
+		user, ok := GetUserFromContext(r)
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "Not authenticated", nil)
+			return
+		}
+
+		// Return user profile including API key
+		response := map[string]interface{}{
+			"username":    user.Email,
+			"email":       user.Email,
+			"name":        fmt.Sprintf("%s %s", user.GivenName, user.FamilyName),
+			"given_name":  user.GivenName,
+			"family_name": user.FamilyName,
+			"picture":     user.Picture,
+			"api_key":     user.APIKey,
+		}
+
+		writeJSON(w, http.StatusOK, response)
 	}
 }

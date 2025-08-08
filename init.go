@@ -24,14 +24,6 @@ func init() {
 	log.Printf("✅ User management embedded migrations registered")
 }
 
-// GetMigrationsDir returns the path to the user management migrations directory
-// This function is deprecated since migrations are now embedded
-// This can be used by applications that need to know where the migrations are located
-func GetMigrationsDir() string {
-	// Migrations are now embedded, but return the logical path for compatibility
-	return "packages/domains/go-user-management/migrations"
-}
-
 // ValidateUserSchema performs user-specific schema validation
 func ValidateUserSchema() error {
 	// This could perform user-specific validation beyond what the generic

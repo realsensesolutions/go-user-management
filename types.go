@@ -40,24 +40,21 @@ type UpdateUserRequest struct {
 	Role       *string `json:"role,omitempty"`
 }
 
-// CognitoConfig holds complete Cognito configuration
-type CognitoConfig struct {
-	ClientID     string `json:"clientId"`
-	ClientSecret string `json:"clientSecret"`
-	UserPoolID   string `json:"userPoolId"`
-	RedirectURI  string `json:"redirectUri"`
-	Region       string `json:"region"`
-	Domain       string `json:"domain,omitempty"` // For logout URL construction
-}
-
-// OAuth2Config holds OAuth2 configuration
-type OAuth2Config struct {
+// OAuthConfig holds complete OAuth2/Cognito authentication configuration
+// This replaces and consolidates CognitoConfig and OAuth2Config into a single, cleaner interface
+type OAuthConfig struct {
+	// Required Cognito/OAuth2 fields
 	ClientID     string   `json:"clientId"`
 	ClientSecret string   `json:"clientSecret"`
-	RedirectPath string   `json:"redirectPath"`
+	UserPoolID   string   `json:"userPoolId"`
+	RedirectURI  string   `json:"redirectUri"` // Full URL, path extracted internally
+	Region       string   `json:"region"`
+	Domain       string   `json:"domain,omitempty"` // For logout URL construction
+	FrontEndURL  string   `json:"frontEndUrl"`      // Frontend base URL
 	Scopes       []string `json:"scopes"`
-	ProviderURL  string   `json:"providerUrl"`
-	RedirectURI  string   `json:"redirectUri"`
+
+	// Business logic injection
+	CalculateDefaultRole func(*OIDCClaims) string `json:"-"` // Custom role calculation
 }
 
 // FlexibleBool is a custom type that can unmarshal from both boolean and string values

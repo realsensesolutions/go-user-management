@@ -12,25 +12,60 @@ import (
 
 // OAuth2Service handles complete OAuth2/OIDC flows
 type OAuth2Service struct {
-	userService   Service
-	stateRepo     StateRepository
-	config        *OAuth2Config
-	cognitoConfig *CognitoConfig
+	userService Service
+	stateRepo   StateRepository
+	oauthConfig *OAuthConfig
 }
 
-// NewOAuth2Service creates a new OAuth2 service with configuration validation
-func NewOAuth2Service(userService Service, stateRepo StateRepository, config *OAuth2Config, cognitoConfig *CognitoConfig) *OAuth2Service {
+// NewOAuth2ServiceFromOAuthConfig creates a new OAuth2 service with OAuthConfig
+func NewOAuth2ServiceFromOAuthConfig(userService Service, stateRepo StateRepository, oauthConfig *OAuthConfig) (*OAuth2Service, error) {
 	// Validate required configuration for OAuth2
-	if err := validateOAuth2Config(config, cognitoConfig); err != nil {
-		panic(fmt.Sprintf("OAuth2 service creation failed: %v", err))
+	if err := validateOAuthConfig(oauthConfig); err != nil {
+		return nil, fmt.Errorf("OAuth2 service creation failed: %v", err)
 	}
 
 	return &OAuth2Service{
-		userService:   userService,
-		stateRepo:     stateRepo,
-		config:        config,
-		cognitoConfig: cognitoConfig,
+		userService: userService,
+		stateRepo:   stateRepo,
+		oauthConfig: oauthConfig,
+	}, nil
+}
+
+// validateOAuthConfig validates that all required OAuthConfig fields are provided
+func validateOAuthConfig(config *OAuthConfig) error {
+	if config == nil {
+		return fmt.Errorf("OAuthConfig cannot be nil")
 	}
+
+	var missing []string
+
+	if config.ClientID == "" {
+		missing = append(missing, "ClientID")
+	}
+	if config.ClientSecret == "" {
+		missing = append(missing, "ClientSecret")
+	}
+	if config.UserPoolID == "" {
+		missing = append(missing, "UserPoolID")
+	}
+	if config.RedirectURI == "" {
+		missing = append(missing, "RedirectURI")
+	}
+	if config.Region == "" {
+		missing = append(missing, "Region")
+	}
+	if config.FrontEndURL == "" {
+		missing = append(missing, "FrontEndURL")
+	}
+	if len(config.Scopes) == 0 {
+		missing = append(missing, "Scopes")
+	}
+
+	if len(missing) > 0 {
+		return fmt.Errorf("missing required OAuthConfig fields: %v", missing)
+	}
+
+	return nil
 }
 
 // GenerateAuthURL generates an OAuth2 authorization URL with state management
@@ -107,12 +142,12 @@ func (s *OAuth2Service) HandleCallback(code, state string) (*Claims, string, str
 	}
 
 	// Validate ID token
-	claims, err := ValidateOIDCToken(context.Background(), rawIDToken, s.cognitoConfig)
+	claims, err := ValidateOIDCTokenFromOAuthConfig(context.Background(), rawIDToken, s.oauthConfig)
 	if err != nil {
 		return nil, "", "", fmt.Errorf("failed to validate ID token: %w", err)
 	}
 
-	// Create or update user in database
+	// Create or update user in database with role calculation
 	err = s.upsertUser(claims)
 	if err != nil {
 		log.Printf("❌ Failed to create/update user: %v", err)
@@ -124,22 +159,22 @@ func (s *OAuth2Service) HandleCallback(code, state string) (*Claims, string, str
 
 // createOAuth2Config creates an OAuth2 configuration
 func (s *OAuth2Service) createOAuth2Config() (*oauth2.Config, error) {
-	if s.cognitoConfig.ClientID == "" {
-		return nil, fmt.Errorf("ClientID is required in CognitoConfig")
+	if s.oauthConfig.ClientID == "" {
+		return nil, fmt.Errorf("ClientID is required in OAuthConfig")
 	}
 
 	// Initialize provider if not already done
-	provider, err := initOIDCProvider(s.cognitoConfig)
+	provider, err := initOIDCProviderFromOAuthConfig(s.oauthConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize OIDC provider: %w", err)
 	}
 
 	config := &oauth2.Config{
-		ClientID:     s.cognitoConfig.ClientID,
-		ClientSecret: s.cognitoConfig.ClientSecret,
-		RedirectURL:  s.config.RedirectURI,
+		ClientID:     s.oauthConfig.ClientID,
+		ClientSecret: s.oauthConfig.ClientSecret,
+		RedirectURL:  s.oauthConfig.RedirectURI,
 		Endpoint:     provider.Endpoint(),
-		Scopes:       s.config.Scopes,
+		Scopes:       s.oauthConfig.Scopes,
 	}
 
 	return config, nil
@@ -155,13 +190,21 @@ func (s *OAuth2Service) upsertUser(claims *Claims) error {
 
 	// If user doesn't exist, create them
 	if existingUser == nil {
+		// Calculate default role using the provided function
+		defaultRole := "user" // fallback default
+		if s.oauthConfig.CalculateDefaultRole != nil {
+			// Convert Claims to OIDCClaims for role calculation
+			oidcClaims := s.convertClaimsToOIDCClaims(claims)
+			defaultRole = s.oauthConfig.CalculateDefaultRole(oidcClaims)
+		}
+
 		createReq := CreateUserRequest{
 			ID:         claims.Email,
 			Email:      claims.Email,
 			GivenName:  claims.GivenName,
 			FamilyName: claims.FamilyName,
 			Picture:    claims.Picture,
-			Role:       "user",
+			Role:       defaultRole,
 		}
 
 		_, err = s.userService.CreateUser(context.Background(), createReq)
@@ -173,43 +216,16 @@ func (s *OAuth2Service) upsertUser(claims *Claims) error {
 	return nil
 }
 
-// validateOAuth2Config validates that all required OAuth2 configuration is provided
-func validateOAuth2Config(config *OAuth2Config, cognitoConfig *CognitoConfig) error {
-	if config == nil {
-		return fmt.Errorf("OAuth2Config cannot be nil")
+// convertClaimsToOIDCClaims converts standardized Claims back to OIDCClaims for role calculation
+func (s *OAuth2Service) convertClaimsToOIDCClaims(claims *Claims) *OIDCClaims {
+	return &OIDCClaims{
+		Sub:        claims.Sub,
+		Email:      claims.Email,
+		GivenName:  claims.GivenName,
+		FamilyName: claims.FamilyName,
+		Picture:    claims.Picture,
+		Username:   claims.Username,
+		APIKey:     claims.APIKey,
+		// Additional fields would be populated from the original token if needed
 	}
-
-	if cognitoConfig == nil {
-		return fmt.Errorf("CognitoConfig cannot be nil")
-	}
-
-	var missing []string
-
-	if cognitoConfig.ClientID == "" {
-		missing = append(missing, "CognitoConfig.ClientID")
-	}
-	if cognitoConfig.ClientSecret == "" {
-		missing = append(missing, "CognitoConfig.ClientSecret")
-	}
-	if cognitoConfig.UserPoolID == "" {
-		missing = append(missing, "CognitoConfig.UserPoolID")
-	}
-	if cognitoConfig.RedirectURI == "" {
-		missing = append(missing, "CognitoConfig.RedirectURI")
-	}
-	if cognitoConfig.Region == "" {
-		missing = append(missing, "CognitoConfig.Region")
-	}
-	if config.RedirectURI == "" {
-		missing = append(missing, "OAuth2Config.RedirectURI")
-	}
-	if len(config.Scopes) == 0 {
-		missing = append(missing, "OAuth2Config.Scopes")
-	}
-
-	if len(missing) > 0 {
-		return fmt.Errorf("missing required OAuth2 configuration fields: %v", missing)
-	}
-
-	return nil
 }

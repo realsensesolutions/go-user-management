@@ -16,8 +16,8 @@ var (
 	providerMutex sync.Mutex
 )
 
-// initOIDCProvider initializes the OIDC provider with the provided configuration
-func initOIDCProvider(config *CognitoConfig) (*oidc.Provider, error) {
+// initOIDCProviderFromOAuthConfig initializes the OIDC provider with OAuthConfig
+func initOIDCProviderFromOAuthConfig(config *OAuthConfig) (*oidc.Provider, error) {
 	providerMutex.Lock()
 	defer providerMutex.Unlock()
 
@@ -26,11 +26,11 @@ func initOIDCProvider(config *CognitoConfig) (*oidc.Provider, error) {
 	}
 
 	if config.UserPoolID == "" {
-		return nil, fmt.Errorf("UserPoolID is required in CognitoConfig")
+		return nil, fmt.Errorf("userPoolID is required in OAuthConfig")
 	}
 
 	if config.Region == "" {
-		return nil, fmt.Errorf("Region is required in CognitoConfig")
+		return nil, fmt.Errorf("region is required in OAuthConfig")
 	}
 
 	issuerURL := fmt.Sprintf("https://cognito-idp.%s.amazonaws.com/%s", config.Region, config.UserPoolID)
@@ -46,7 +46,7 @@ func initOIDCProvider(config *CognitoConfig) (*oidc.Provider, error) {
 
 	// Initialize the ID token verifier
 	if config.ClientID == "" {
-		return nil, fmt.Errorf("ClientID is required in CognitoConfig")
+		return nil, fmt.Errorf("clientID is required in OAuthConfig")
 	}
 
 	oidcVerifier = oidcProvider.Verifier(&oidc.Config{
@@ -57,15 +57,15 @@ func initOIDCProvider(config *CognitoConfig) (*oidc.Provider, error) {
 	return oidcProvider, nil
 }
 
-// ValidateOIDCToken validates an OIDC ID token and returns claims
-func ValidateOIDCToken(ctx context.Context, tokenString string, config *CognitoConfig) (*Claims, error) {
+// ValidateOIDCTokenFromOAuthConfig validates an OIDC ID token using OAuthConfig and returns claims
+func ValidateOIDCTokenFromOAuthConfig(ctx context.Context, tokenString string, config *OAuthConfig) (*Claims, error) {
 	if tokenString == "" {
 		return nil, fmt.Errorf("empty token")
 	}
 
 	// Initialize verifier if not already done
 	if oidcVerifier == nil {
-		_, err := initOIDCProvider(config)
+		_, err := initOIDCProviderFromOAuthConfig(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize OIDC provider: %w", err)
 		}
@@ -83,6 +83,12 @@ func ValidateOIDCToken(ctx context.Context, tokenString string, config *CognitoC
 		return nil, fmt.Errorf("failed to extract claims: %w", err)
 	}
 
+	// Calculate role using the provided function, or default to "user"
+	defaultRole := "user"
+	if config.CalculateDefaultRole != nil {
+		defaultRole = config.CalculateDefaultRole(&oidcClaims)
+	}
+
 	// Convert to standardized Claims format
 	claims := &Claims{
 		Sub:        oidcClaims.Sub,
@@ -92,8 +98,8 @@ func ValidateOIDCToken(ctx context.Context, tokenString string, config *CognitoC
 		Picture:    oidcClaims.Picture,
 		Username:   oidcClaims.Username,
 		APIKey:     oidcClaims.APIKey,
-		Role:       "user", // Default role, could be derived from cognito:groups if needed
-		Provider:   "oidc",
+		Role:       defaultRole,
+		Provider:   "cognito",
 	}
 
 	return claims, nil
