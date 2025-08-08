@@ -428,7 +428,7 @@ service := user.NewService(myCustomRepo)
 
 ## 🔄 Migration Guide
 
-### v1.13.x to v1.15.0 (Latest)
+### v1.13.x to Latest
 
 **New Features:**
 - ✨ **Self-contained user management routes**: `RegisterUserRoutes(r, authConfig)`
@@ -443,7 +443,7 @@ user.RegisterUserRoutes(r, nil) // Self-contained, zero config needed!
 
 **Installation:**
 ```bash
-go get github.com/realsensesolutions/go-user-management@v1.15.0
+go get github.com/realsensesolutions/go-user-management@latest
 ```
 
 ### v1.12.x to v1.13.0

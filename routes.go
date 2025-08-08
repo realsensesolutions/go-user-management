@@ -64,17 +64,10 @@ func writeError(w http.ResponseWriter, status int, message string, details map[s
 }
 
 // RegisterUserRoutes registers standard user management routes
-func RegisterUserRoutes(r chi.Router, authConfig *AuthConfig) {
+func RegisterUserRoutes(r chi.Router) {
 	// Create user service internally using SQLite repository
 	repo := NewSQLiteRepository()
 	service := NewService(repo)
-
-	if authConfig == nil {
-		authConfig = DefaultAuthConfig(service)
-	}
-
-	// authConfig is reserved for future use when additional auth configuration is needed
-	_ = authConfig
 
 	// Apply authentication middleware to user routes
 	r.Route("/api/users", func(r chi.Router) {
