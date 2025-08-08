@@ -1,4 +1,4 @@
-module github.com/realsensesolutions/go-user-management/v2
+module github.com/realsensesolutions/go-user-management
 
 go 1.23.0
 
