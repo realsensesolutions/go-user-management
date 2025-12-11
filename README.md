@@ -88,6 +88,8 @@ func calculateUserRole(claims *user.OIDCClaims) string {
 
 The package provides a clean, domain-focused API for user operations. All functions use Cognito as the persistence layer, but Cognito complexity is hidden:
 
+**Note:** Use `CreateUser()` for OAuth flows where Cognito handles user creation automatically. Use `CreateUserWithInvitation()` for admin-initiated invitations that require temporary passwords.
+
 ```go
 import (
     "context"
@@ -107,13 +109,22 @@ func userManagementExample(ctx context.Context) {
         return
     }
     
-    // Create a new user
+    // Create a new user (for OAuth flows - no password set)
     newUser, err := user.CreateUser(ctx, user.CreateUserRequest{
         Email:      "newuser@example.com",
         GivenName:  "New",
         FamilyName: "User",
         Role:       "user",
     })
+    
+    // Create user with invitation (for admin invitations - sets temporary password)
+    invitedUser, tempPassword, err := user.CreateUserWithInvitation(ctx, user.CreateUserRequest{
+        Email:      "invited@example.com",
+        GivenName:  "Invited",
+        FamilyName: "User",
+        Role:       "user",
+    })
+    // tempPassword can be sent via email - user must change on first login
     
     // Update user profile
     updated, err := user.UpdateProfile(ctx, "john@example.com", user.ProfileUpdate{
@@ -189,6 +200,7 @@ func getProfileHandler(w http.ResponseWriter, r *http.Request) {
 // User CRUD Operations
 func GetUser(ctx context.Context, email string) (*User, error)
 func CreateUser(ctx context.Context, req CreateUserRequest) (*User, error)
+func CreateUserWithInvitation(ctx context.Context, req CreateUserRequest) (*User, string, error)
 func UpdateProfile(ctx context.Context, email string, update ProfileUpdate) (*User, error)
 func UpdateRole(ctx context.Context, email string, role string) (*User, error)
 func DeleteUser(ctx context.Context, email string) error

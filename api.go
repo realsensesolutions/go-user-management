@@ -271,6 +271,38 @@ func FindUserByToken(ctx context.Context, token string) (*Claims, error) {
 	return FindUserClaimsByToken(ctx, token, oauthConfig)
 }
 
+func CreateUserWithInvitation(ctx context.Context, req CreateUserRequest) (*User, string, error) {
+	if req.Email == "" {
+		return nil, "", fmt.Errorf("email is required: %w", ErrInvalidInput)
+	}
+
+	if oauthConfig == nil {
+		return nil, "", fmt.Errorf("oauth config is not set")
+	}
+
+	cognitoUser, err := cognitoCreateUser(ctx, req, oauthConfig)
+	if err != nil {
+		return nil, "", err
+	}
+
+	tempPassword, err := generateSecureTemporaryPassword()
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to generate temporary password: %w", err)
+	}
+
+	err = cognitoSetTemporaryPassword(ctx, req.Email, tempPassword, oauthConfig)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to set temporary password: %w", err)
+	}
+
+	user, err := cognitoUserToUser(*cognitoUser)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return user, tempPassword, nil
+}
+
 func generateSecureAPIKey() string {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {

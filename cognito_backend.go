@@ -51,8 +51,8 @@ func cognitoGetUser(ctx context.Context, email string, oauthConfig *OAuthConfig)
 	user := &types.UserType{
 		Username:   result.Username,
 		Attributes: result.UserAttributes,
-		UserStatus:  result.UserStatus,
-		Enabled:     result.Enabled,
+		UserStatus: result.UserStatus,
+		Enabled:    result.Enabled,
 	}
 
 	return user, nil
@@ -118,6 +118,27 @@ func cognitoCreateUser(ctx context.Context, req CreateUserRequest, oauthConfig *
 	}
 
 	return result.User, nil
+}
+
+func cognitoSetTemporaryPassword(ctx context.Context, email, password string, oauthConfig *OAuthConfig) error {
+	client, err := getCognitoClient(ctx, oauthConfig)
+	if err != nil {
+		return err
+	}
+
+	input := &cognitoidentityprovider.AdminSetUserPasswordInput{
+		UserPoolId: aws.String(oauthConfig.UserPoolID),
+		Username:   aws.String(email),
+		Password:   aws.String(password),
+		Permanent:  false,
+	}
+
+	_, err = client.AdminSetUserPassword(ctx, input)
+	if err != nil {
+		return wrapCognitoError(err, "AdminSetUserPassword")
+	}
+
+	return nil
 }
 
 func cognitoUpdateUserAttributes(ctx context.Context, email string, attributes []types.AttributeType, oauthConfig *OAuthConfig) error {
@@ -309,4 +330,3 @@ func isAlreadyExists(err error) bool {
 		strings.Contains(err.Error(), "already exists") ||
 		err == ErrUserAlreadyExists
 }
-
