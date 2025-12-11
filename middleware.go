@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -102,87 +103,46 @@ func validateAPIKey(ctx context.Context, service Service, apiKey string) (*Claim
 	return claims, nil
 }
 
-// RequireAuthMiddleware creates middleware that requires authentication via JWT or API key
-// Everything is initialized internally - no configuration needed
+// RequireAuthMiddleware creates middleware that requires JWT authentication only
+// No database operations - only validates JWT tokens
 func RequireAuthMiddleware() func(http.Handler) http.Handler {
-	// Create user service internally (same pattern as in SetupAuthRoutes)
-	repo := NewSQLiteRepository()
-	userService := NewService(repo)
-
-	// Create default auth config
-	config := DefaultAuthConfig(userService)
-	config.RequireAuth = true
-
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			log.Printf("🔍 [RequireAuthMiddleware] === Authentication Check Started ===")
+			log.Printf("🔍 [RequireAuthMiddleware] Request Method: %s, Path: %s", r.Method, r.URL.Path)
+			log.Printf("🔍 [RequireAuthMiddleware] Request Host: %s", r.Host)
+
 			var claims *Claims
-			var user *User
 			var err error
 
-			// First try JWT cookie with OIDC validation
-			cookie, cookieErr := r.Cookie(config.CookieName)
+			// Validate JWT cookie with OIDC validation
+			cookie, cookieErr := r.Cookie("jwt")
 			if cookieErr == nil {
+				log.Printf("🔍 [RequireAuthMiddleware] Found JWT cookie: jwt (length: %d)", len(cookie.Value))
 				oidcConfig := getRequiredOIDCConfig()
+				log.Printf("🔄 [RequireAuthMiddleware] Validating JWT token...")
 				claims, err = ValidateOIDCTokenFromOAuthConfig(r.Context(), cookie.Value, oidcConfig)
 				if err == nil && claims != nil {
-					// JWT is valid, get user data
-					user, err = config.Service.GetUserByEmail(r.Context(), claims.Email)
-					if err == nil {
-						// Priority 1: Use API key from JWT claims (Cognito)
-						if claims.APIKey != "" {
-							// Sync JWT key with database if different
-							if user.APIKey != claims.APIKey {
-								err := config.Service.UpdateAPIKey(r.Context(), user.Email, user.Email, claims.APIKey)
-								if err == nil {
-									user.APIKey = claims.APIKey
-								}
-							}
-						} else if user.APIKey != "" {
-							// Priority 2: Use API key from database
-							claims.APIKey = user.APIKey
-						} else {
-							// Priority 3: Generate new API key if both are empty
-							apiKey, err := config.Service.GenerateAPIKey(r.Context(), user.Email, user.Email)
-							if err == nil {
-								user.APIKey = apiKey
-								claims.APIKey = apiKey
-							}
-						}
+					log.Printf("✅ [RequireAuthMiddleware] JWT token validated successfully")
+					log.Printf("🔍 [RequireAuthMiddleware] Claims - Email: %s, Username: %s, Sub: %s", claims.Email, claims.Username, claims.Sub)
 
-						// Add user to context and proceed
-						ctx := context.WithValue(r.Context(), ClaimsKey, claims)
-						ctx = context.WithValue(ctx, UserKey, user)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
-					}
+					// JWT is valid - add claims to context and proceed (no database lookup)
+					log.Printf("✅ [RequireAuthMiddleware] Authentication successful, proceeding to handler")
+					ctx := context.WithValue(r.Context(), ClaimsKey, claims)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				} else {
+					log.Printf("❌ [RequireAuthMiddleware] JWT token validation failed: %v", err)
+					log.Printf("🔍 [RequireAuthMiddleware] Error type: %T", err)
 				}
+			} else {
+				log.Printf("⚠️ [RequireAuthMiddleware] No JWT cookie found: %v", cookieErr)
 			}
 
-			// Fallback to API key header
-			apiKey := r.Header.Get(config.APIKeyHeader)
-			if apiKey != "" {
-				claims, err = validateAPIKey(r.Context(), config.Service, apiKey)
-				if err == nil && claims != nil {
-					// API key is valid, get user data
-					user, err = config.Service.GetUserByEmail(r.Context(), claims.Email)
-					if err == nil {
-						// Add claims and user to context and proceed
-						ctx := context.WithValue(r.Context(), ClaimsKey, claims)
-						ctx = context.WithValue(ctx, UserKey, user)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
-					}
-				}
-			}
-
-			// If we get here, authentication failed
-			if config.RequireAuth {
-				config.ErrorHandler(w, r, fmt.Errorf("no valid authentication provided"))
-				return
-			}
-
-			// Optional auth - proceed without user context
-			next.ServeHTTP(w, r)
+			// Authentication failed
+			log.Printf("❌ [RequireAuthMiddleware] === Authentication Failed ===")
+			log.Printf("❌ [RequireAuthMiddleware] No valid JWT token provided")
+			http.Error(w, "Unauthorized: no valid JWT token provided", http.StatusUnauthorized)
 		})
 	}
 }
@@ -190,8 +150,8 @@ func RequireAuthMiddleware() func(http.Handler) http.Handler {
 // OptionalAuthMiddleware creates middleware that allows optional authentication
 // Everything is initialized internally - no configuration needed
 func OptionalAuthMiddleware() func(http.Handler) http.Handler {
-	// Create user service internally (same pattern as in SetupAuthRoutes)
-	repo := NewSQLiteRepository()
+	// Create user service internally using factory (supports SQLite and PostgreSQL)
+	repo := NewRepository()
 	userService := NewService(repo)
 
 	// Create default auth config with optional auth
@@ -275,8 +235,8 @@ func OptionalAuthMiddleware() func(http.Handler) http.Handler {
 // APIKeyOnlyMiddleware creates middleware that only accepts API key authentication
 // Everything is initialized internally - no configuration needed
 func APIKeyOnlyMiddleware() func(http.Handler) http.Handler {
-	// Create user service internally
-	repo := NewSQLiteRepository()
+	// Create user service internally using factory (supports SQLite and PostgreSQL)
+	repo := NewRepository()
 	userService := NewService(repo)
 
 	return func(next http.Handler) http.Handler {

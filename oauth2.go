@@ -2,7 +2,6 @@ package user
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -11,21 +10,21 @@ import (
 )
 
 // OAuth2Service handles complete OAuth2/OIDC flows
+// Note: Only validates JWT tokens, no database operations
 type OAuth2Service struct {
-	userService Service
 	stateRepo   StateRepository
 	oauthConfig *OAuthConfig
 }
 
 // NewOAuth2ServiceFromOAuthConfig creates a new OAuth2 service with OAuthConfig
-func NewOAuth2ServiceFromOAuthConfig(userService Service, stateRepo StateRepository, oauthConfig *OAuthConfig) (*OAuth2Service, error) {
+// Note: Only validates JWT tokens, no database operations
+func NewOAuth2ServiceFromOAuthConfig(stateRepo StateRepository, oauthConfig *OAuthConfig) (*OAuth2Service, error) {
 	// Validate required configuration for OAuth2
 	if err := validateOAuthConfig(oauthConfig); err != nil {
 		return nil, fmt.Errorf("OAuth2 service creation failed: %v", err)
 	}
 
 	return &OAuth2Service{
-		userService: userService,
 		stateRepo:   stateRepo,
 		oauthConfig: oauthConfig,
 	}, nil
@@ -108,19 +107,35 @@ func (s *OAuth2Service) GenerateAuthURL(redirectURL string) (string, error) {
 
 // HandleCallback processes an OAuth2 callback and returns user claims, raw ID token, and redirect URL
 func (s *OAuth2Service) HandleCallback(code, state string) (*Claims, string, string, error) {
+	log.Printf("🔍 [HandleCallback] === Starting OAuth Callback Processing ===")
+	log.Printf("🔍 [HandleCallback] Code length: %d", len(code))
+	log.Printf("🔍 [HandleCallback] State length: %d", len(state))
+	log.Printf("🔍 [HandleCallback] State preview: %s", func() string {
+		if len(state) > 20 {
+			return state[:20] + "..."
+		}
+		return state
+	}())
+
 	if code == "" {
+		log.Printf("❌ [HandleCallback] Missing authorization code")
 		return nil, "", "", fmt.Errorf("missing authorization code")
 	}
 
 	if state == "" {
+		log.Printf("❌ [HandleCallback] Missing state parameter")
 		return nil, "", "", fmt.Errorf("missing state parameter")
 	}
 
 	// Validate state parameter and get redirect URL
+	log.Printf("🔄 [HandleCallback] Validating state parameter...")
 	redirectURL, isValid := s.stateRepo.ValidateAndRemoveState(state)
 	if !isValid {
+		log.Printf("❌ [HandleCallback] State validation failed - invalid or expired")
+		log.Printf("🔍 [HandleCallback] State that failed: %s", state[:min(20, len(state))]+"...")
 		return nil, "", "", fmt.Errorf("invalid or expired state parameter")
 	}
+	log.Printf("✅ [HandleCallback] State validated successfully, redirect URL: %s", redirectURL)
 
 	// Initialize OAuth2 config
 	oauth2Config, err := s.createOAuth2Config()
@@ -129,31 +144,40 @@ func (s *OAuth2Service) HandleCallback(code, state string) (*Claims, string, str
 	}
 
 	// Exchange authorization code for tokens
-	log.Printf("🔄 Exchanging authorization code for tokens...")
+	log.Printf("🔄 [HandleCallback] Exchanging authorization code for tokens...")
+	log.Printf("🔍 [HandleCallback] OAuth2 Config - ClientID: %s, RedirectURI: %s", oauth2Config.ClientID, oauth2Config.RedirectURL)
 	token, err := oauth2Config.Exchange(context.Background(), code)
 	if err != nil {
+		log.Printf("❌ [HandleCallback] Token exchange failed: %v", err)
+		log.Printf("🔍 [HandleCallback] Error type: %T", err)
 		return nil, "", "", fmt.Errorf("failed to exchange code for token: %w", err)
 	}
+	log.Printf("✅ [HandleCallback] Token exchange successful")
+	log.Printf("🔍 [HandleCallback] Token type: %s", token.TokenType)
+	log.Printf("🔍 [HandleCallback] Token expiry: %v", token.Expiry)
 
 	// Extract ID token
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
+		log.Printf("❌ [HandleCallback] No ID token in response")
 		return nil, "", "", fmt.Errorf("no ID token in response")
 	}
+	log.Printf("✅ [HandleCallback] ID token extracted, length: %d", len(rawIDToken))
 
 	// Validate ID token
+	log.Printf("🔄 [HandleCallback] Validating ID token...")
 	claims, err := ValidateOIDCTokenFromOAuthConfig(context.Background(), rawIDToken, s.oauthConfig)
 	if err != nil {
+		log.Printf("❌ [HandleCallback] ID token validation failed: %v", err)
+		log.Printf("🔍 [HandleCallback] Error type: %T", err)
 		return nil, "", "", fmt.Errorf("failed to validate ID token: %w", err)
 	}
+	log.Printf("✅ [HandleCallback] ID token validated successfully")
+	log.Printf("🔍 [HandleCallback] Claims - Email: %s, Username: %s, Sub: %s, GivenName: %s, FamilyName: %s",
+		claims.Email, claims.Username, claims.Sub, claims.GivenName, claims.FamilyName)
 
-	// Create or update user in database with role calculation
-	err = s.upsertUser(claims)
-	if err != nil {
-		log.Printf("❌ Failed to create/update user: %v", err)
-		// Don't fail the authentication, just log the error
-	}
-
+	// JWT validation only - no database operations
+	log.Printf("✅ [HandleCallback] === OAuth Callback Processing Completed Successfully ===")
 	return claims, rawIDToken, redirectURL, nil
 }
 
@@ -178,54 +202,4 @@ func (s *OAuth2Service) createOAuth2Config() (*oauth2.Config, error) {
 	}
 
 	return config, nil
-}
-
-// upsertUser creates or updates a user record in the database
-func (s *OAuth2Service) upsertUser(claims *Claims) error {
-	// Revert to original working pattern - check if user exists first
-	existingUser, err := s.userService.GetUserByEmail(context.Background(), claims.Email)
-	if err != nil && !errors.Is(err, ErrUserNotFound) {
-		return fmt.Errorf("failed to check user existence: %w", err)
-	}
-
-	// If user doesn't exist, create them
-	if existingUser == nil {
-		// Calculate default role using the provided function
-		defaultRole := "user" // fallback default
-		if s.oauthConfig.CalculateDefaultRole != nil {
-			// Convert Claims to OIDCClaims for role calculation
-			oidcClaims := s.convertClaimsToOIDCClaims(claims)
-			defaultRole = s.oauthConfig.CalculateDefaultRole(oidcClaims)
-		}
-
-		createReq := CreateUserRequest{
-			ID:         claims.Email,
-			Email:      claims.Email,
-			GivenName:  claims.GivenName,
-			FamilyName: claims.FamilyName,
-			Picture:    claims.Picture,
-			Role:       defaultRole,
-		}
-
-		_, err = s.userService.CreateUser(context.Background(), createReq)
-		if err != nil && err != ErrUserAlreadyExists {
-			return fmt.Errorf("failed to create user: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// convertClaimsToOIDCClaims converts standardized Claims back to OIDCClaims for role calculation
-func (s *OAuth2Service) convertClaimsToOIDCClaims(claims *Claims) *OIDCClaims {
-	return &OIDCClaims{
-		Sub:        claims.Sub,
-		Email:      claims.Email,
-		GivenName:  claims.GivenName,
-		FamilyName: claims.FamilyName,
-		Picture:    claims.Picture,
-		Username:   claims.Username,
-		APIKey:     claims.APIKey,
-		// Additional fields would be populated from the original token if needed
-	}
 }

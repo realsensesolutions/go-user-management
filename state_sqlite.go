@@ -18,7 +18,40 @@ type SQLiteStateRepository struct {
 
 // NewSQLiteStateRepository creates a new SQLite-based state repository
 func NewSQLiteStateRepository() StateRepository {
-	return &SQLiteStateRepository{}
+	repo := &SQLiteStateRepository{}
+	// Ensure the oauth_states table exists
+	repo.ensureTableExists()
+	return repo
+}
+
+// ensureTableExists creates the oauth_states table if it doesn't exist
+func (r *SQLiteStateRepository) ensureTableExists() {
+	db, err := database.GetDB()
+	if err != nil {
+		log.Printf("⚠️ [StateRepo] Failed to get database for table creation: %v", err)
+		return
+	}
+	defer db.Close()
+
+	// Create oauth_states table if it doesn't exist
+	createTableSQL := `
+		CREATE TABLE IF NOT EXISTS oauth_states (
+			id TEXT PRIMARY KEY,
+			state TEXT UNIQUE NOT NULL,
+			redirect_url TEXT,
+			expires_at INTEGER NOT NULL,
+			created_at INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_oauth_states_state ON oauth_states(state);
+		CREATE INDEX IF NOT EXISTS idx_oauth_states_expires_at ON oauth_states(expires_at);
+	`
+
+	_, err = db.Exec(createTableSQL)
+	if err != nil {
+		log.Printf("⚠️ [StateRepo] Failed to create oauth_states table: %v", err)
+	} else {
+		log.Printf("✅ [StateRepo] oauth_states table ensured")
+	}
 }
 
 // StoreState stores an OAuth state with optional redirect URL

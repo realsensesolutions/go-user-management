@@ -57,26 +57,51 @@ func (h *OAuth2Handlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 // CallbackHandler handles OIDC callback requests
 func (h *OAuth2Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("🔍 [CallbackHandler] === OAuth Callback Request Started ===")
+	log.Printf("🔍 [CallbackHandler] Request Method: %s", r.Method)
+	log.Printf("🔍 [CallbackHandler] Request URL: %s", r.URL.String())
+	log.Printf("🔍 [CallbackHandler] Request Host: %s", r.Host)
+	log.Printf("🔍 [CallbackHandler] Request RemoteAddr: %s", r.RemoteAddr)
+	log.Printf("🔍 [CallbackHandler] Request Headers: %+v", r.Header)
+
 	// Extract code and state from query parameters
 	code := r.URL.Query().Get("code")
 	state := r.URL.Query().Get("state")
 
+	log.Printf("🔍 [CallbackHandler] Extracted code: %s (length: %d)", func() string {
+		if code == "" {
+			return "<empty>"
+		}
+		return code[:min(20, len(code))] + "..."
+	}(), len(code))
+	log.Printf("🔍 [CallbackHandler] Extracted state: %s (length: %d)", func() string {
+		if state == "" {
+			return "<empty>"
+		}
+		return state[:min(20, len(state))] + "..."
+	}(), len(state))
+
 	if code == "" {
-		log.Printf("❌ Missing authorization code")
+		log.Printf("❌ [CallbackHandler] Missing authorization code")
+		log.Printf("🔍 [CallbackHandler] Query parameters: %+v", r.URL.Query())
 		h.writeJSONError(w, http.StatusBadRequest, "Missing authorization code")
 		return
 	}
 
 	if state == "" {
-		log.Printf("❌ Missing state parameter")
+		log.Printf("❌ [CallbackHandler] Missing state parameter")
+		log.Printf("🔍 [CallbackHandler] Query parameters: %+v", r.URL.Query())
 		h.writeJSONError(w, http.StatusBadRequest, "Missing state parameter")
 		return
 	}
 
+	log.Printf("🔄 [CallbackHandler] Calling HandleCallback with code and state...")
 	// Handle OAuth2 callback
-	_, rawIDToken, redirectURL, err := h.oauth2Service.HandleCallback(code, state)
+	claims, rawIDToken, redirectURL, err := h.oauth2Service.HandleCallback(code, state)
 	if err != nil {
-		log.Printf("❌ OAuth2 callback failed: %v", err)
+		log.Printf("❌ [CallbackHandler] OAuth2 callback failed: %v", err)
+		log.Printf("🔍 [CallbackHandler] Error type: %T", err)
+		log.Printf("🔍 [CallbackHandler] Error details: %+v", err)
 
 		// Check retry attempts to prevent infinite loops
 		retryAttempts := h.getRetryAttempts(r)
@@ -105,33 +130,57 @@ func (h *OAuth2Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request)
 		retryAttempts++
 		authURL += fmt.Sprintf("&%s=%d", RetryQueryParam, retryAttempts)
 
-		log.Printf("🔄 Redirecting to OAuth authorize endpoint (attempt %d/%d): %s", retryAttempts, MaxOAuthRetryAttempts, authURL)
+		log.Printf("🔄 [CallbackHandler] Redirecting to OAuth authorize endpoint (attempt %d/%d): %s", retryAttempts, MaxOAuthRetryAttempts, authURL)
 		w.Header().Set("Location", authURL)
 		w.WriteHeader(http.StatusFound)
 		return
 	}
 
+	log.Printf("✅ [CallbackHandler] OAuth2 callback succeeded")
+	log.Printf("🔍 [CallbackHandler] Claims received - Email: %s, Username: %s, Sub: %s", claims.Email, claims.Username, claims.Sub)
+	log.Printf("🔍 [CallbackHandler] Raw ID Token length: %d", len(rawIDToken))
+	log.Printf("🔍 [CallbackHandler] Redirect URL from state: %s", redirectURL)
+
 	// Use the real raw ID token from Cognito (not a fake one!)
 
 	// Create JWT cookie using the real Cognito ID token
+	log.Printf("🔄 [CallbackHandler] Extracting JWT expiration...")
 	maxAge := h.extractJWTExpiration(rawIDToken)
-	cookieDomain := h.getCookieDomain()
-	cookie := h.createJWTCookie(rawIDToken, maxAge, cookieDomain)
+	log.Printf("🔍 [CallbackHandler] JWT Max-Age: %d seconds", maxAge)
 
-	log.Printf("🍪 Setting JWT cookie with Max-Age: %d seconds", maxAge)
+	log.Printf("🔄 [CallbackHandler] Getting cookie domain...")
+	cookieDomain := h.getCookieDomain()
+	log.Printf("🔍 [CallbackHandler] Cookie domain: %s", cookieDomain)
+
+	log.Printf("🔄 [CallbackHandler] Creating JWT cookie...")
+	cookie := h.createJWTCookie(rawIDToken, maxAge, cookieDomain)
+	log.Printf("🔍 [CallbackHandler] Cookie created: %s", cookie[:min(100, len(cookie))]+"...")
+
+	log.Printf("🍪 [CallbackHandler] Setting JWT cookie with Max-Age: %d seconds", maxAge)
 
 	// Set cookie and redirect
 	w.Header().Set("Set-Cookie", cookie)
+	log.Printf("🔍 [CallbackHandler] Response headers before redirect: %+v", w.Header())
 
 	// Use the redirect URL from state, or default to dashboard
 	finalRedirectURL := redirectURL
 	if finalRedirectURL == "" {
 		finalRedirectURL = h.getFrontEndURL() + "/dashboard"
+		log.Printf("⚠️ [CallbackHandler] No redirect URL from state, using default: %s", finalRedirectURL)
 	}
 
-	log.Printf("🔗 Redirecting after OAuth success to: %s", finalRedirectURL)
+	log.Printf("🔗 [CallbackHandler] Redirecting after OAuth success to: %s", finalRedirectURL)
 	w.Header().Set("Location", finalRedirectURL)
 	w.WriteHeader(http.StatusFound)
+	log.Printf("✅ [CallbackHandler] === OAuth Callback Request Completed ===")
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // LogoutHandler handles logout requests with Cognito logout URL support

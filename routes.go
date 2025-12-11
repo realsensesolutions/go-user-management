@@ -65,8 +65,8 @@ func writeError(w http.ResponseWriter, status int, message string, details map[s
 
 // RegisterUserRoutes registers standard user management routes
 func RegisterUserRoutes(r chi.Router) {
-	// Create user service internally using SQLite repository
-	repo := NewSQLiteRepository()
+	// Create user service using repository factory (supports SQLite and PostgreSQL)
+	repo := NewRepository()
 	service := NewService(repo)
 
 	// Apply authentication middleware to user routes
@@ -277,15 +277,11 @@ func SetupAuthRoutes(r chi.Router) error {
 		return fmt.Errorf("invalid OAuth configuration: %w", err)
 	}
 
-	// Create user service using SQLite (for now, could be configurable later)
-	repo := NewSQLiteRepository()
-	userService := NewService(repo)
-
-	// Create state repository
+	// Create state repository for OAuth state management (SQLite only, no PostgreSQL)
 	stateRepo := NewSQLiteStateRepository()
 
-	// Create OAuth2 service using the consolidated config
-	oauth2Service, err := createOAuth2ServiceFromOAuthConfig(userService, stateRepo, config)
+	// Create OAuth2 service using the consolidated config (JWT validation only, no database)
+	oauth2Service, err := createOAuth2ServiceFromOAuthConfig(stateRepo, config)
 	if err != nil {
 		return fmt.Errorf("failed to create OAuth2 service: %w", err)
 	}
@@ -300,9 +296,9 @@ func SetupAuthRoutes(r chi.Router) error {
 
 	// Setup protected auth routes (requires authentication)
 	r.Route("/api/auth", func(r chi.Router) {
-		// Authentication middleware - everything handled internally
+		// Authentication middleware - JWT validation only
 		r.Use(RequireAuthMiddleware())
-		r.Get("/profile", createProfileHandler(userService))
+		r.Get("/profile", createJWTProfileHandler())
 	})
 
 	log.Printf("✅ Authentication routes setup completed")
@@ -310,9 +306,10 @@ func SetupAuthRoutes(r chi.Router) error {
 }
 
 // createOAuth2ServiceFromOAuthConfig creates OAuth2Service from OAuthConfig
-func createOAuth2ServiceFromOAuthConfig(userService Service, stateRepo StateRepository, config *OAuthConfig) (*OAuth2Service, error) {
-	// Create OAuth2 service directly from OAuthConfig - no need for legacy conversion
-	return NewOAuth2ServiceFromOAuthConfig(userService, stateRepo, config)
+// Note: Only validates JWT tokens, no database operations
+func createOAuth2ServiceFromOAuthConfig(stateRepo StateRepository, config *OAuthConfig) (*OAuth2Service, error) {
+	// Create OAuth2 service directly from OAuthConfig - JWT validation only
+	return NewOAuth2ServiceFromOAuthConfig(stateRepo, config)
 }
 
 // createOAuth2HandlersFromOAuthConfig creates OAuth2Handlers with internal helper functions
@@ -331,25 +328,26 @@ func createOAuth2HandlersFromOAuthConfig(oauth2Service *OAuth2Service, config *O
 	}
 }
 
-// createProfileHandler creates the profile endpoint handler
-func createProfileHandler(userService Service) http.HandlerFunc {
+// createJWTProfileHandler creates the profile endpoint handler using JWT claims only
+func createJWTProfileHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Get user from context (set by auth middleware)
-		user, ok := GetUserFromContext(r)
+		// Get claims from context (set by auth middleware)
+		claims, ok := GetClaimsFromContext(r)
 		if !ok {
 			writeError(w, http.StatusUnauthorized, "Not authenticated", nil)
 			return
 		}
 
-		// Return user profile including API key
+		// Return user profile from JWT claims
 		response := map[string]interface{}{
-			"username":    user.Email,
-			"email":       user.Email,
-			"name":        fmt.Sprintf("%s %s", user.GivenName, user.FamilyName),
-			"given_name":  user.GivenName,
-			"family_name": user.FamilyName,
-			"picture":     user.Picture,
-			"api_key":     user.APIKey,
+			"username":    claims.Username,
+			"email":       claims.Email,
+			"name":        fmt.Sprintf("%s %s", claims.GivenName, claims.FamilyName),
+			"given_name":  claims.GivenName,
+			"family_name": claims.FamilyName,
+			"picture":     claims.Picture,
+			"api_key":     claims.APIKey,
+			"role":        claims.Role,
 		}
 
 		writeJSON(w, http.StatusOK, response)
