@@ -10,15 +10,6 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
-//go:embed migrations/postgres/*.sql
-var postgresMigrationsFS embed.FS
-
-// GetPostgresMigrationsFS returns the embedded filesystem containing PostgreSQL migrations
-// This allows external packages to run these migrations using their own migration system
-func GetPostgresMigrationsFS() embed.FS {
-	return postgresMigrationsFS
-}
-
 // init registers user management migrations with the global database registry
 // Note: Migrations are registered for both SQLite and PostgreSQL
 // The actual migration set used depends on runtime configuration
@@ -32,15 +23,6 @@ func init() {
 		EmbedFS: &migrationsFS,
 		SubPath: "migrations",
 		Prefix:  "user_sqlite_",
-	})
-
-	// Register PostgreSQL migrations
-	log.Printf("📦 Registering PostgreSQL migrations for user-management")
-	database.RegisterMigrations(database.MigrationSource{
-		Name:    "user-management-postgres",
-		EmbedFS: &postgresMigrationsFS,
-		SubPath: "migrations/postgres",
-		Prefix:  "user_pg_",
 	})
 
 	log.Printf("✅ User management embedded migrations registered")

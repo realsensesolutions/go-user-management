@@ -277,8 +277,10 @@ func SetupAuthRoutes(r chi.Router) error {
 		return fmt.Errorf("invalid OAuth configuration: %w", err)
 	}
 
-	// Create state repository for OAuth state management (SQLite only, no PostgreSQL)
-	stateRepo := NewSQLiteStateRepository()
+	// Create state repository for OAuth state management
+	// Always use encrypted state (stateless) - works in Lambda/serverless environments
+	stateRepo := NewEncryptedStateRepository()
+	log.Printf("✅ Using encrypted state repository (stateless)")
 
 	// Create OAuth2 service using the consolidated config (JWT validation only, no database)
 	oauth2Service, err := createOAuth2ServiceFromOAuthConfig(stateRepo, config)

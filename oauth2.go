@@ -79,28 +79,44 @@ func (s *OAuth2Service) GenerateAuthURL(redirectURL string) (string, error) {
 	}
 	log.Printf("✅ [OAuth2Service] OAuth2 config initialized successfully")
 
-	// Generate secure state parameter
-	state, err := GenerateSecureState()
+	// Generate secure nonce for state
+	nonce, err := GenerateSecureState()
 	if err != nil {
-		log.Printf("❌ [OAuth2Service] Failed to generate state: %v", err)
-		return "", fmt.Errorf("failed to generate state: %w", err)
+		log.Printf("❌ [OAuth2Service] Failed to generate nonce: %v", err)
+		return "", fmt.Errorf("failed to generate nonce: %w", err)
 	}
-	log.Printf("✅ [OAuth2Service] Generated secure state: %s", state[:8]+"...")
+	log.Printf("✅ [OAuth2Service] Generated secure nonce: %s", nonce[:8]+"...")
 
-	// Store state with expiration (5 minutes) and redirect URL
-	log.Printf("🔄 [OAuth2Service] About to store state in repository...")
+	// Create state - for encrypted repo, this is a no-op (state is in the encrypted token)
+	// For SQLite repo, this stores in database
+	log.Printf("🔄 [OAuth2Service] About to prepare state...")
 	startTime := time.Now()
-	err = s.stateRepo.StoreState(state, redirectURL, time.Now().Add(5*time.Minute))
+	err = s.stateRepo.StoreState(nonce, redirectURL, time.Now().Add(5*time.Minute))
 	duration := time.Since(startTime)
 
 	if err != nil {
-		log.Printf("❌ [OAuth2Service] Failed to store state after %v: %v", duration, err)
-		return "", fmt.Errorf("failed to store state: %w", err)
+		log.Printf("❌ [OAuth2Service] Failed to prepare state after %v: %v", duration, err)
+		return "", fmt.Errorf("failed to prepare state: %w", err)
 	}
-	log.Printf("✅ [OAuth2Service] State stored successfully in %v", duration)
+	log.Printf("✅ [OAuth2Service] State prepared successfully in %v", duration)
 
-	// Generate authorization URL
-	authURL := oauth2Config.AuthCodeURL(state, oauth2.AccessTypeOffline)
+	// For encrypted state repository, generate the encrypted state token to use as OAuth state parameter
+	// The encrypted token contains: timestamp + redirectURL + nonce
+	// For SQLite repo, use the nonce directly (stored in DB)
+	var oauthState string
+	if encryptedRepo, ok := s.stateRepo.(*EncryptedStateRepository); ok {
+		oauthState, err = encryptedRepo.GenerateEncryptedState(nonce, redirectURL)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate encrypted state: %w", err)
+		}
+		log.Printf("✅ [OAuth2Service] Generated encrypted state token (length: %d)", len(oauthState))
+	} else {
+		oauthState = nonce
+		log.Printf("✅ [OAuth2Service] Using nonce as state (stored in database)")
+	}
+
+	// Generate authorization URL with state
+	authURL := oauth2Config.AuthCodeURL(oauthState, oauth2.AccessTypeOffline)
 	log.Printf("✅ [OAuth2Service] Generated auth URL successfully")
 	return authURL, nil
 }
@@ -132,7 +148,11 @@ func (s *OAuth2Service) HandleCallback(code, state string) (*Claims, string, str
 	redirectURL, isValid := s.stateRepo.ValidateAndRemoveState(state)
 	if !isValid {
 		log.Printf("❌ [HandleCallback] State validation failed - invalid or expired")
-		log.Printf("🔍 [HandleCallback] State that failed: %s", state[:min(20, len(state))]+"...")
+		statePreview := state
+		if len(state) > 20 {
+			statePreview = state[:20] + "..."
+		}
+		log.Printf("🔍 [HandleCallback] State that failed: %s", statePreview)
 		return nil, "", "", fmt.Errorf("invalid or expired state parameter")
 	}
 	log.Printf("✅ [HandleCallback] State validated successfully, redirect URL: %s", redirectURL)

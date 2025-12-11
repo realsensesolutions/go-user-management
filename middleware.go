@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -103,8 +104,9 @@ func validateAPIKey(ctx context.Context, service Service, apiKey string) (*Claim
 	return claims, nil
 }
 
-// RequireAuthMiddleware creates middleware that requires JWT authentication only
-// No database operations - only validates JWT tokens
+// RequireAuthMiddleware creates middleware that requires authentication
+// Supports both JWT tokens (from cookie) and opaque tokens (from Authorization header)
+// No database operations - validates JWT tokens or looks up users in Cognito by token
 func RequireAuthMiddleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +117,7 @@ func RequireAuthMiddleware() func(http.Handler) http.Handler {
 			var claims *Claims
 			var err error
 
-			// Validate JWT cookie with OIDC validation
+			// First, try JWT cookie with OIDC validation
 			cookie, cookieErr := r.Cookie("jwt")
 			if cookieErr == nil {
 				log.Printf("🔍 [RequireAuthMiddleware] Found JWT cookie: jwt (length: %d)", len(cookie.Value))
@@ -126,7 +128,7 @@ func RequireAuthMiddleware() func(http.Handler) http.Handler {
 					log.Printf("✅ [RequireAuthMiddleware] JWT token validated successfully")
 					log.Printf("🔍 [RequireAuthMiddleware] Claims - Email: %s, Username: %s, Sub: %s", claims.Email, claims.Username, claims.Sub)
 
-					// JWT is valid - add claims to context and proceed (no database lookup)
+					// JWT is valid - add claims to context and proceed
 					log.Printf("✅ [RequireAuthMiddleware] Authentication successful, proceeding to handler")
 					ctx := context.WithValue(r.Context(), ClaimsKey, claims)
 					next.ServeHTTP(w, r.WithContext(ctx))
@@ -139,12 +141,56 @@ func RequireAuthMiddleware() func(http.Handler) http.Handler {
 				log.Printf("⚠️ [RequireAuthMiddleware] No JWT cookie found: %v", cookieErr)
 			}
 
+			// Second, try Authorization header with opaque token
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" {
+				parts := strings.SplitN(authHeader, " ", 2)
+				if len(parts) == 2 && strings.ToLower(parts[0]) == "bearer" {
+					token := parts[1]
+					log.Printf("🔍 [RequireAuthMiddleware] Found Authorization header with Bearer token (length: %d)", len(token))
+
+					// Check if it's a JWT (has 3 dot-separated parts) or opaque token
+					if isJWTToken(token) {
+						log.Printf("🔄 [RequireAuthMiddleware] Token appears to be JWT, validating...")
+						oidcConfig := getRequiredOIDCConfig()
+						claims, err = ValidateOIDCTokenFromOAuthConfig(r.Context(), token, oidcConfig)
+						if err == nil && claims != nil {
+							log.Printf("✅ [RequireAuthMiddleware] JWT token from Authorization header validated successfully")
+							ctx := context.WithValue(r.Context(), ClaimsKey, claims)
+							next.ServeHTTP(w, r.WithContext(ctx))
+							return
+						} else {
+							log.Printf("❌ [RequireAuthMiddleware] JWT token from Authorization header validation failed: %v", err)
+						}
+					} else {
+						// Opaque token - look up in Cognito
+						log.Printf("🔄 [RequireAuthMiddleware] Token appears to be opaque, looking up in Cognito...")
+						oidcConfig := getRequiredOIDCConfig()
+						claims, err = FindUserClaimsByToken(r.Context(), token, oidcConfig)
+						if err == nil && claims != nil {
+							log.Printf("✅ [RequireAuthMiddleware] Opaque token validated successfully")
+							log.Printf("🔍 [RequireAuthMiddleware] Claims - Email: %s, Username: %s", claims.Email, claims.Username)
+							ctx := context.WithValue(r.Context(), ClaimsKey, claims)
+							next.ServeHTTP(w, r.WithContext(ctx))
+							return
+						} else {
+							log.Printf("❌ [RequireAuthMiddleware] Opaque token lookup failed: %v", err)
+						}
+					}
+				}
+			}
+
 			// Authentication failed
 			log.Printf("❌ [RequireAuthMiddleware] === Authentication Failed ===")
-			log.Printf("❌ [RequireAuthMiddleware] No valid JWT token provided")
-			http.Error(w, "Unauthorized: no valid JWT token provided", http.StatusUnauthorized)
+			log.Printf("❌ [RequireAuthMiddleware] No valid authentication token provided")
+			http.Error(w, "Unauthorized: no valid authentication token provided", http.StatusUnauthorized)
 		})
 	}
+}
+
+func isJWTToken(token string) bool {
+	parts := strings.Split(token, ".")
+	return len(parts) == 3
 }
 
 // OptionalAuthMiddleware creates middleware that allows optional authentication
