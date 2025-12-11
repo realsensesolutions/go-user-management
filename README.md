@@ -1,15 +1,15 @@
 # go-user-management 🚀
 
-A production-ready user management package for Go applications with **simplified integration**. Provides self-contained authentication middleware, OAuth2/OIDC setup, complete user management API, API key management, and database migrations.
+A production-ready user management package for Go applications with **Cognito-backed persistence**. Provides self-contained authentication middleware, OAuth2/OIDC setup, and a clean user management API that abstracts away AWS Cognito complexity.
 
-## ✨ Core Features (Production-Used)
+## ✨ Core Features
 
 - **🔐 Self-Contained Auth**: Zero-config middleware with internal initialization
 - **⚡ OAuth2/OIDC Setup**: Complete auth routes with single function call
-- **👥 User Management API**: Self-contained CRUD routes with built-in security
+- **👥 User Management API**: Clean, domain-focused API functions (Cognito-backed)
 - **🔑 API Key Management**: Generate, validate, and manage API keys
-- **🗄️ Database Migrations**: Embedded SQL migrations with auto-migration support
-- **📦 Repository Pattern**: Clean separation with SQLite implementation
+- **🌐 Cognito Integration**: AWS Cognito as persistence layer (hidden implementation detail)
+- **📦 Stateless OAuth State**: Encrypted, stateless OAuth state management (serverless-ready)
 
 ## 🚀 Quick Start
 
@@ -19,7 +19,7 @@ A production-ready user management package for Go applications with **simplified
 go get github.com/realsensesolutions/go-user-management@latest
 ```
 
-### Complete OAuth2/OIDC Setup (Super Simple!)
+### Complete OAuth2/OIDC Setup
 
 ```go
 package main
@@ -29,24 +29,18 @@ import (
     "log"
     
     user "github.com/realsensesolutions/go-user-management"
-    database "github.com/realsensesolutions/go-database"
     "github.com/go-chi/chi/v5"
 )
 
 func main() {
-    // 1. Run migrations (they auto-register)
-    if err := database.RunAllMigrations(); err != nil {
-        log.Fatal("Migration failed:", err)
-    }
-    
-    // 2. Setup complete authentication system
+    // 1. Setup complete authentication system
     setupAuthentication()
 }
 
 func setupAuthentication() {
     r := chi.NewRouter()
     
-    // 3. Single config for OAuth2/OIDC (replaces multiple configs)
+    // 2. Single config for OAuth2/OIDC
     oauthConfig := user.OAuthConfig{
         ClientID:     os.Getenv("COGNITO_CLIENT_ID"),
         ClientSecret: os.Getenv("COGNITO_CLIENT_SECRET"),
@@ -59,16 +53,16 @@ func setupAuthentication() {
         CalculateDefaultRole: calculateUserRole, // Custom role logic
     }
     
-    // 4. Set OAuth config globally
+    // 3. Set OAuth config globally
     user.SetOAuthConfig(&oauthConfig)
     
-    // 5. Setup ALL auth routes (login, logout, callback, profile) - ONE LINE!
+    // 4. Setup ALL auth routes (login, logout, callback, profile) - ONE LINE!
     err := user.SetupAuthRoutes(r)
     if err != nil {
         log.Fatal("Auth setup failed:", err)
     }
     
-    // 6. Add authentication to protected routes - ZERO CONFIG!
+    // 5. Add authentication to protected routes - ZERO CONFIG!
     r.Group(func(r chi.Router) {
         r.Use(user.RequireAuthMiddleware()) // That's it! 🎯
         
@@ -90,150 +84,77 @@ func calculateUserRole(claims *user.OIDCClaims) string {
 }
 ```
 
-### Alternative Middleware Options
+### User Management API
+
+The package provides a clean, domain-focused API for user operations. All functions use Cognito as the persistence layer, but Cognito complexity is hidden:
 
 ```go
-// Different authentication patterns for different needs
+import (
+    "context"
+    user "github.com/realsensesolutions/go-user-management"
+)
 
-func setupAdvancedAuth() {
+func userManagementExample(ctx context.Context) {
+    // Set OAuth config first (required for all operations)
+    user.SetOAuthConfig(&oauthConfig)
+    
+    // Get user by email
+    user, err := user.GetUser(ctx, "john@example.com")
+    if err != nil {
+        if err == user.ErrUserNotFound {
+            // Handle not found
+        }
+        return
+    }
+    
+    // Create a new user
+    newUser, err := user.CreateUser(ctx, user.CreateUserRequest{
+        Email:      "newuser@example.com",
+        GivenName:  "New",
+        FamilyName: "User",
+        Role:       "user",
+    })
+    
+    // Update user profile
+    updated, err := user.UpdateProfile(ctx, "john@example.com", user.ProfileUpdate{
+        GivenName:  stringPtr("John"),
+        FamilyName: stringPtr("Smith"),
+        Picture:    stringPtr("https://example.com/avatar.jpg"),
+    })
+    
+    // Update user role
+    _, err = user.UpdateRole(ctx, "john@example.com", "FieldOfficer")
+    
+    // Generate API key
+    apiKey, err := user.GenerateAPIKey(ctx, "john@example.com")
+    
+    // Validate API key
+    user, err := user.ValidateAPIKey(ctx, apiKey)
+    
+    // List users (with pagination)
+    users, err := user.ListUsers(ctx, 20, 0)
+    
+    // Delete user
+    err = user.DeleteUser(ctx, "john@example.com")
+}
+
+func stringPtr(s string) *string {
+    return &s
+}
+```
+
+### Authentication Middleware
+
+```go
+func setupRoutes() {
     r := chi.NewRouter()
     
-    // Option 1: Required authentication (most common)
+    // Required authentication (most common)
     r.Group(func(r chi.Router) {
         r.Use(user.RequireAuthMiddleware()) // Blocks unauthenticated requests
         r.Get("/api/private", privateHandler)
     })
-    
-    // Option 2: Optional authentication (public + enhanced for authenticated)
-    r.Group(func(r chi.Router) {
-        r.Use(user.OptionalAuthMiddleware()) // Allows unauthenticated requests
-        r.Get("/api/public", publicHandler) // Works with or without auth
-    })
-    
-    // Option 3: API key only (service-to-service)
-    r.Group(func(r chi.Router) {
-        r.Use(user.APIKeyOnlyMiddleware()) // Only validates API keys, no JWT
-        r.Get("/api/service", serviceHandler)
-    })
 }
-```
-
-### User Management API Routes
-
-In addition to authentication, you can also register user management CRUD routes:
-
-```go
-func setupUserManagement() {
-    r := chi.NewRouter()
-    
-    // Setup OAuth configuration first
-    user.SetOAuthConfig(&oauthConfig)
-    
-    // Setup authentication routes
-    err := user.SetupAuthRoutes(r)
-    if err != nil {
-        log.Fatal("Auth setup failed:", err)
-    }
-    
-    // Add user management routes (self-contained, no dependencies!)
-    user.RegisterUserRoutes(r, nil) // Uses default auth config
-    
-    // This automatically creates these protected routes:
-    // GET    /api/users/me        - Get current user profile
-    // GET    /api/users/{id}      - Get user by ID (admin or self only)  
-    // PUT    /api/users/me        - Update current user profile
-    // POST   /api/users/api-key   - Generate new API key
-    // GET    /api/users/api-key   - Get current API key
-    // GET    /api/users           - List users (admin only)
-}
-```
-
-**Key Benefits:**
-- **Zero Configuration**: Service and repository created internally
-- **Built-in Security**: All routes require authentication automatically
-- **Role-based Access**: Admin-only and self-access controls built-in
-- **API Keys**: Built-in API key generation and management
-
-### OAuth Configuration (Required)
-
-You must configure OAuth settings programmatically at startup:
-
-```go
-func main() {
-    // Set OAuth config at startup (REQUIRED)
-    user.SetOAuthConfig(&user.OAuthConfig{
-        ClientID:     "your_cognito_client_id",
-        UserPoolID:   "your_cognito_user_pool_id", 
-        Region:       "us-east-1",
-        ClientSecret: "your_client_secret", // Optional
-        RedirectURI:  "https://yourapp.com/callback", // For OAuth flows
-        FrontEndURL:  "https://yourapp.com", // For OAuth flows
-        Scopes:       []string{"openid", "email", "profile"}, // For OAuth flows
-    })
-    
-    // Now middleware automatically uses this config
-    r.Use(user.RequireAuthMiddleware()) // Uses the config you just set
-}
-```
-
-**Important**: You must call `SetOAuthConfig()` before using any authentication functions or middleware. The application will panic if no configuration is provided.
-
-### Basic User Service (Without OAuth2)
-
-If you only need user management without OAuth2/OIDC:
-
-```go
-func basicUserService() {
-    // Create user service
-    repo := user.NewSQLiteRepository()
-    userService := user.NewService(repo)
-    
-    // Create a user
-    createReq := user.CreateUserRequest{
-        ID:         "user@example.com",
-        Email:      "user@example.com",
-        GivenName:  "John",
-        FamilyName: "Doe",
-        Role:       "user",
-    }
-    newUser, err := userService.CreateUser(ctx, createReq)
-    
-    // Generate API key
-    apiKey, err := userService.GenerateAPIKey(ctx, newUser.ID, newUser.Email)
-}
-
-## 🔄 Core Operations
-
-### User Management
-
-```go
-// Create user
-createReq := user.CreateUserRequest{
-    ID:         "user@example.com",
-    Email:      "user@example.com", 
-    GivenName:  "John",
-    FamilyName: "Doe",
-    Role:       "user",
-}
-newUser, err := service.CreateUser(ctx, createReq)
-
-// Get user
-user, err := service.GetUserByID(ctx, "user@example.com")
-user, err := service.GetUserByEmail(ctx, "user@example.com")
-```
-
-### API Key Management
-
-```go
-// Generate API key
-apiKey, err := service.GenerateAPIKey(ctx, userID, email)
-
-// Validate API key  
-user, err := service.ValidateAPIKey(ctx, apiKey)
-
-// Get/Update API key
-existingKey, err := service.GetAPIKey(ctx, userID)
-err := service.UpdateAPIKey(ctx, userID, email, newAPIKey)
 ```
 
 ### Context Helpers
@@ -255,60 +176,32 @@ func getProfileHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    // Get just the user ID
+    // Get just the user email (used as ID)
     userID, ok := user.GetUserIDFromContext(r)
-}
-```
-
-## 🗄️ Database Migrations
-
-Migrations are automatically registered when you import the package:
-
-```go
-import (
-    _ "github.com/realsensesolutions/go-user-management" // Auto-registers migrations
-    database "github.com/realsensesolutions/go-database"
-)
-
-func main() {
-    // This will run user management migrations + any others
-    if err := database.RunAllMigrations(); err != nil {
-        log.Fatal(err)
-    }
-}
-```
-
-Or run migrations manually:
-
-```go
-db, err := sql.Open("sqlite", "app.db")
-if err := user.AutoMigrate(db); err != nil {
-    log.Fatal(err)
 }
 ```
 
 ## 📋 API Reference
 
-### Core Service Interface
+### User Management Functions
 
 ```go
-type Service interface {
-    // Essential operations (commonly used)
-    GetUserByID(ctx context.Context, userID string) (*User, error)
-    GetUserByEmail(ctx context.Context, email string) (*User, error)
-    CreateUser(ctx context.Context, req CreateUserRequest) (*User, error)
-    
-    // API key operations (commonly used)
-    ValidateAPIKey(ctx context.Context, apiKey string) (*User, error)
-    GenerateAPIKey(ctx context.Context, userID, email string) (string, error)
-    GetAPIKey(ctx context.Context, userID string) (string, error)
-    UpdateAPIKey(ctx context.Context, userID, email, apiKey string) error
-    
-    // Advanced operations (optional)
-    UpdateUser(ctx context.Context, req UpdateUserRequest) (*User, error)
-    DeleteUser(ctx context.Context, userID string) error
-    ListUsers(ctx context.Context, limit, offset int) ([]*User, error)
-}
+// User CRUD Operations
+func GetUser(ctx context.Context, email string) (*User, error)
+func CreateUser(ctx context.Context, req CreateUserRequest) (*User, error)
+func UpdateProfile(ctx context.Context, email string, update ProfileUpdate) (*User, error)
+func UpdateRole(ctx context.Context, email string, role string) (*User, error)
+func DeleteUser(ctx context.Context, email string) error
+func ListUsers(ctx context.Context, limit, offset int) ([]*User, error)
+
+// API Key Management
+func GenerateAPIKey(ctx context.Context, email string) (string, error)
+func GetAPIKey(ctx context.Context, email string) (string, error)
+func RotateAPIKey(ctx context.Context, email string) (string, error)
+func ValidateAPIKey(ctx context.Context, apiKey string) (*User, error)
+
+// Token Lookup (for auth middleware)
+func FindUserByToken(ctx context.Context, token string) (*Claims, error)
 ```
 
 ### Authentication Functions
@@ -317,48 +210,34 @@ type Service interface {
 // OAuth2/OIDC Setup (complete auth flow)
 func SetupAuthRoutes(r chi.Router) error
 
-// User Management Routes (CRUD operations)
-func RegisterUserRoutes(r chi.Router, authConfig *AuthConfig) 
-
 // OAuth Configuration (programmatic setup)
 func SetOAuthConfig(config *OAuthConfig)
 func GetOAuthConfig() *OAuthConfig
 
 // Self-contained middleware (no parameters needed!)
 func RequireAuthMiddleware() func(http.Handler) http.Handler
-func OptionalAuthMiddleware() func(http.Handler) http.Handler  
-func APIKeyOnlyMiddleware() func(http.Handler) http.Handler
 
 // Context helpers
 func GetUserFromContext(r *http.Request) (*User, bool)
 func GetClaimsFromContext(r *http.Request) (*Claims, bool)  
 func GetUserIDFromContext(r *http.Request) (string, bool)
-
-// Basic service creation
-func NewSQLiteRepository() Repository
-func NewService(repo Repository) Service
-
-// Migration
-func AutoMigrate(db *sql.DB) error
 ```
 
 ### Types
 
 ```go
+// User represents a user in the system (Cognito-backed, but Cognito-agnostic)
 type User struct {
-    ID         string    `json:"id"`
-    Email      string    `json:"email"`
-    GivenName  string    `json:"givenName"`
-    FamilyName string    `json:"familyName"`
-    Picture    string    `json:"picture"`
-    Role       string    `json:"role"`
-    APIKey     string    `json:"apiKey"`
-    CreatedAt  time.Time `json:"createdAt"`
-    UpdatedAt  time.Time `json:"updatedAt"`
+    Email      string `json:"email"`       // Primary identifier
+    GivenName  string `json:"givenName"`
+    FamilyName string `json:"familyName"`
+    Picture    string `json:"picture"`
+    Role       string `json:"role"`
+    APIKey     string `json:"apiKey,omitempty"` // Omitted if not set
 }
 
+// CreateUserRequest represents a request to create a new user
 type CreateUserRequest struct {
-    ID         string `json:"id"`         // Usually email
     Email      string `json:"email"`
     GivenName  string `json:"givenName"`
     FamilyName string `json:"familyName"`
@@ -366,6 +245,14 @@ type CreateUserRequest struct {
     Role       string `json:"role,omitempty"`
 }
 
+// ProfileUpdate represents fields that can be updated in a user profile
+type ProfileUpdate struct {
+    GivenName  *string `json:"givenName,omitempty"`
+    FamilyName *string `json:"familyName,omitempty"`
+    Picture    *string `json:"picture,omitempty"`
+}
+
+// Claims represents authentication claims (used by middleware)
 type Claims struct {
     Sub        string `json:"sub"`         // User ID
     Email      string `json:"email"`
@@ -405,6 +292,18 @@ type OIDCClaims struct {
 }
 ```
 
+### Error Types
+
+```go
+var (
+    ErrUserNotFound      = errors.New("user not found")
+    ErrUserAlreadyExists = errors.New("user already exists")
+    ErrInvalidInput      = errors.New("invalid input")
+    ErrInvalidAPIKey     = errors.New("invalid API key")
+    ErrPermissionDenied  = errors.New("permission denied")
+)
+```
+
 ## 🌟 Advanced Features
 
 ### Complete OAuth2 Flow
@@ -424,95 +323,115 @@ err := user.SetupAuthRoutes(r)
 // GET  /api/auth/login      - Initiate login flow  
 // GET  /api/auth/logout     - Logout handler
 // GET  /api/auth/profile    - Get user profile (protected)
-
-// Optional: Add user management CRUD routes
-user.RegisterUserRoutes(r, nil) // Self-contained user management API
 ```
 
 **Benefits**: Zero boilerplate, automatic user creation, role assignment, and session management.
 
-**Pro Tip**: Combine `SetupAuthRoutes()` with `RegisterUserRoutes()` for a complete user management system with just two function calls!
+### Token-Based Authentication
 
-### Custom Repository
-
-Implement your own storage backend:
+The middleware supports both JWT tokens (from cookies) and opaque tokens (from Authorization headers):
 
 ```go
-type Repository interface {
-    CreateUser(req CreateUserRequest) (*User, error)
-    GetUserByID(userID string) (*User, error)
-    GetUserByEmail(email string) (*User, error)
-    UpdateUser(req UpdateUserRequest) (*User, error)
-    DeleteUser(userID string) error
-    // ... other methods
-}
+// JWT token in cookie (standard OAuth flow)
+// Cookie: jwt=<jwt-token>
 
-// Use custom repository
-service := user.NewService(myCustomRepo)
+// Opaque token in Authorization header (API access)
+// Authorization: Bearer <opaque-token>
 ```
+
+The middleware automatically detects token type and validates accordingly.
+
+### Stateless OAuth State Management
+
+OAuth state is managed using AES-256-GCM symmetric encryption, making it stateless and serverless-ready. See [docs/state.md](docs/state.md) for details.
 
 ## 🔧 Requirements
 
 - Go 1.22 or later
-- SQLite via `modernc.org/sqlite`
-- Database migrations via `github.com/realsensesolutions/go-database`
+- AWS Cognito User Pool (for user persistence)
+- AWS SDK for Go v2 (automatically included)
+
+## 🔐 AWS Cognito Setup
+
+### Required Cognito Custom Attributes
+
+Your Cognito User Pool must have these custom attributes:
+
+- `custom:role` - User role (e.g., "user", "admin", "FieldOfficer")
+- `custom:apiKey` - API key for service-to-service authentication
+
+### AWS Permissions
+
+Your AWS credentials need these permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminUpdateUserAttributes",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminListUsers",
+        "cognito-idp:AdminSetUserPassword"
+      ],
+      "Resource": "arn:aws:cognito-idp:REGION:ACCOUNT:userpool/USER_POOL_ID"
+    }
+  ]
+}
+```
 
 ## 📖 Examples
 
-- [Basic Usage](examples/basic_usage.go) - Complete example with database setup
-- [Middleware Integration](examples/middleware_example.go) - HTTP middleware setup
-- [OIDC Integration](examples/oidc_example.go) - Token validation with auto-user creation
+- [Basic Usage](examples/basic_usage.go) - Complete example with OAuth setup
+- See examples directory for more usage patterns
 
 ## 🔄 Migration Guide
 
-### v1.13.x to Latest
+### From SQLite/PostgreSQL to Cognito
 
-**New Features:**
-- ✨ **Self-contained user management routes**: `RegisterUserRoutes(r, authConfig)`
-- 🚀 **Zero-dependency service creation**: No need to manage Service/Repository instances
-- 📋 **Built-in CRUD API**: Complete user management REST API
+**Breaking Changes:**
 
-**Migration (Optional - for new user management features):**
-```go
-// Add this line after SetupAuthRoutes() for complete user management
-user.RegisterUserRoutes(r, nil) // Self-contained, zero config needed!
-```
-
-**Installation:**
-```bash
-go get github.com/realsensesolutions/go-user-management@latest
-```
-
-### v1.12.x to v1.13.0
-
-**Breaking Changes Summary:**
-
-| v1.12.x (Old) | Latest (New) |
-|------------|--------------|
-| `CognitoConfig` + `OAuth2Config` | Single `OAuthConfig` |
-| `RequireAuthMiddleware(config)` | `RequireAuthMiddleware()` |
-| `SetupAuthRoutes(r, config)` | `SetOAuthConfig(&config)` + `SetupAuthRoutes(r)` |
-| External helper functions | All internalized |
+| Old (v1.x) | New (v2.x) |
+|------------|------------|
+| `Service` interface | Direct function calls (`GetUser()`, `CreateUser()`, etc.) |
+| `Repository` interface | Removed (Cognito is implementation detail) |
+| `User.ID` field | Use `User.Email` as identifier |
+| `User.CreatedAt` / `UpdatedAt` | Removed (not available from Cognito) |
+| `CreateUserRequest.ID` | Removed (email is primary identifier) |
+| `UpdateUserRequest` | Replaced with `ProfileUpdate` |
+| Database migrations | Removed (Cognito manages users) |
 
 **Migration Steps:**
-1. Replace configs with single `OAuthConfig`
-2. Use `SetOAuthConfig()` to set global configuration
-3. Replace manual route setup with `SetupAuthRoutes(r)` (note: no config parameter)
-4. Remove parameters from middleware calls
-5. Remove external helper function dependencies
-6. Update to latest: `go get github.com/realsensesolutions/go-user-management@latest`
+
+1. Remove database/SQLite dependencies
+2. Set up AWS Cognito User Pool with custom attributes
+3. Replace `Service` calls with direct API functions:
+   ```go
+   // Old
+   service := user.NewService(repo)
+   user, err := service.GetUserByEmail(ctx, email)
+   
+   // New
+   user, err := user.GetUser(ctx, email)
+   ```
+4. Update `User` type usage (remove ID, CreatedAt, UpdatedAt fields)
+5. Use `email` as user identifier instead of `ID`
 
 ## 🤝 Production Usage
 
 This package is used in production at RealSense Solutions and handles:
-- **95% less integration code** compared to v1.x
 - Authentication for thousands of users with **zero-config middleware**
 - Complete OAuth2/OIDC flows with **single function call**
-- User management CRUD operations with **self-contained service**
+- User management operations backed by **AWS Cognito**
 - API key management for service-to-service communication  
 - OIDC token validation with auto-user provisioning
 - **Custom role assignment** via function injection
 - Role-based access control with built-in admin/user permissions
+- **Serverless-ready** stateless OAuth state management
 
 ## 📄 License
 

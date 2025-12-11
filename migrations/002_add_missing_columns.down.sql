@@ -1,3 +1,0 @@
--- Rollback for missing columns migration
--- This is a no-op since we only add columns and indexes safely
--- Removing columns would be destructive and should be done manually if needed

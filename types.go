@@ -4,25 +4,20 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"time"
 )
 
-// User represents a generic user in the system
+// User represents a user in the system (Cognito-backed, but Cognito-agnostic)
 type User struct {
-	ID         string    `json:"id" db:"id"`
-	Email      string    `json:"email" db:"email"`
-	GivenName  string    `json:"givenName" db:"given_name"`
-	FamilyName string    `json:"familyName" db:"family_name"`
-	Picture    string    `json:"picture" db:"picture"`
-	Role       string    `json:"role" db:"role"`
-	APIKey     string    `json:"apiKey" db:"api_key"`
-	CreatedAt  time.Time `json:"createdAt" db:"created_at"`
-	UpdatedAt  time.Time `json:"updatedAt" db:"updated_at"`
+	Email      string `json:"email"` // Primary identifier
+	GivenName  string `json:"givenName"`
+	FamilyName string `json:"familyName"`
+	Picture    string `json:"picture"`
+	Role       string `json:"role"`
+	APIKey     string `json:"apiKey,omitempty"` // Omitted if not set
 }
 
 // CreateUserRequest represents a request to create a new user
 type CreateUserRequest struct {
-	ID         string `json:"id"`
 	Email      string `json:"email"`
 	GivenName  string `json:"givenName"`
 	FamilyName string `json:"familyName"`
@@ -30,14 +25,11 @@ type CreateUserRequest struct {
 	Role       string `json:"role,omitempty"`
 }
 
-// UpdateUserRequest represents a request to update an existing user
-type UpdateUserRequest struct {
-	ID         string  `json:"id"`
-	Email      *string `json:"email,omitempty"`
+// ProfileUpdate represents fields that can be updated in a user profile
+type ProfileUpdate struct {
 	GivenName  *string `json:"givenName,omitempty"`
 	FamilyName *string `json:"familyName,omitempty"`
 	Picture    *string `json:"picture,omitempty"`
-	Role       *string `json:"role,omitempty"`
 }
 
 // OAuthConfig holds complete OAuth2/Cognito authentication configuration

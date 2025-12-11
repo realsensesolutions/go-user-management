@@ -22,6 +22,22 @@ func (m *mockUpdateCognitoClient) AdminUpdateUserAttributes(ctx context.Context,
 	return &cognitoidentityprovider.AdminUpdateUserAttributesOutput{}, nil
 }
 
+func (m *mockUpdateCognitoClient) AdminGetUser(ctx context.Context, params *cognitoidentityprovider.AdminGetUserInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminGetUserOutput, error) {
+	return &cognitoidentityprovider.AdminGetUserOutput{}, nil
+}
+
+func (m *mockUpdateCognitoClient) AdminCreateUser(ctx context.Context, params *cognitoidentityprovider.AdminCreateUserInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminCreateUserOutput, error) {
+	return &cognitoidentityprovider.AdminCreateUserOutput{}, nil
+}
+
+func (m *mockUpdateCognitoClient) AdminDeleteUser(ctx context.Context, params *cognitoidentityprovider.AdminDeleteUserInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminDeleteUserOutput, error) {
+	return &cognitoidentityprovider.AdminDeleteUserOutput{}, nil
+}
+
+func (m *mockUpdateCognitoClient) AdminSetUserPassword(ctx context.Context, params *cognitoidentityprovider.AdminSetUserPasswordInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminSetUserPasswordOutput, error) {
+	return &cognitoidentityprovider.AdminSetUserPasswordOutput{}, nil
+}
+
 func TestUpdateCognitoUserAttributesFromClaims(t *testing.T) {
 	t.Run("updates user attributes in Cognito", func(t *testing.T) {
 		originalFactory := cognitoClientFactory

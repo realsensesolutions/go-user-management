@@ -2,29 +2,12 @@ package user
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
-
-var (
-	// Package-level OAuth configuration
-	globalOAuthConfig *OAuthConfig
-)
-
-// SetOAuthConfig sets the global OAuth configuration for OIDC validation
-// This allows consumers to configure OAuth settings programmatically instead of using environment variables
-func SetOAuthConfig(config *OAuthConfig) {
-	globalOAuthConfig = config
-}
-
-// GetOAuthConfig returns the current global OAuth configuration (for testing/debugging)
-func GetOAuthConfig() *OAuthConfig {
-	return globalOAuthConfig
-}
 
 // Define a custom type for the context key to avoid collisions
 type contextKey string
@@ -48,61 +31,17 @@ type Claims struct {
 	Provider   string `json:"provider"`    // Auth provider (jwt, api_key)
 }
 
-// AuthConfig holds configuration for authentication middleware
-type AuthConfig struct {
-	Service      Service                                                 // User service for API key validation
-	CookieName   string                                                  // JWT cookie name (default: "jwt")
-	APIKeyHeader string                                                  // API key header name (default: "X-Api-Key")
-	RequireAuth  bool                                                    // Whether auth is required (default: true)
-	ErrorHandler func(w http.ResponseWriter, r *http.Request, err error) // Custom error handler
-}
-
-// DefaultAuthConfig returns a default authentication configuration
-func DefaultAuthConfig(service Service) *AuthConfig {
-	return &AuthConfig{
-		Service:      service,
-		CookieName:   "jwt",
-		APIKeyHeader: "X-Api-Key",
-		RequireAuth:  true,
-		ErrorHandler: defaultErrorHandler,
-	}
-}
-
-// defaultErrorHandler provides a default error response
-func defaultErrorHandler(w http.ResponseWriter, r *http.Request, err error) {
-	http.Error(w, "Unauthorized: "+err.Error(), http.StatusUnauthorized)
-}
-
 // getRequiredOIDCConfig returns the global OIDC config or panics if not set
 func getRequiredOIDCConfig() *OAuthConfig {
-	if globalOAuthConfig == nil {
+	if oauthConfig == nil {
 		panic("OAuth configuration not set. Call user.SetOAuthConfig() before using authentication middleware or SetupAuthRoutes()")
 	}
-	return globalOAuthConfig
+	return oauthConfig
 }
 
-// validateAPIKey validates an API key and returns claims
-func validateAPIKey(ctx context.Context, service Service, apiKey string) (*Claims, error) {
-	user, err := service.ValidateAPIKey(ctx, apiKey)
-	if err != nil {
-		return nil, fmt.Errorf("invalid api key")
-	}
-
-	// Create claims from user data
-	claims := &Claims{
-		Sub:        user.ID,
-		Email:      user.Email,
-		GivenName:  user.GivenName,
-		FamilyName: user.FamilyName,
-		Picture:    user.Picture,
-		Username:   user.Email, // Use email as username for API key auth
-		APIKey:     apiKey,
-		Role:       user.Role,
-		Provider:   "api_key",
-	}
-
-	return claims, nil
-}
+// AuthConfig, DefaultAuthConfig, validateAPIKey removed
+// These were used by OptionalAuthMiddleware and APIKeyOnlyMiddleware which required
+// SQLite database access. Use RequireAuthMiddleware() instead for JWT/Cognito auth.
 
 // RequireAuthMiddleware creates middleware that requires authentication
 // Supports both JWT tokens (from cookie) and opaque tokens (from Authorization header)
@@ -165,8 +104,7 @@ func RequireAuthMiddleware() func(http.Handler) http.Handler {
 					} else {
 						// Opaque token - look up in Cognito
 						log.Printf("🔄 [RequireAuthMiddleware] Token appears to be opaque, looking up in Cognito...")
-						oidcConfig := getRequiredOIDCConfig()
-						claims, err = FindUserClaimsByToken(r.Context(), token, oidcConfig)
+						claims, err = FindUserByToken(r.Context(), token)
 						if err == nil && claims != nil {
 							log.Printf("✅ [RequireAuthMiddleware] Opaque token validated successfully")
 							log.Printf("🔍 [RequireAuthMiddleware] Claims - Email: %s, Username: %s", claims.Email, claims.Username)
@@ -193,127 +131,28 @@ func isJWTToken(token string) bool {
 	return len(parts) == 3
 }
 
-// OptionalAuthMiddleware creates middleware that allows optional authentication
-// Everything is initialized internally - no configuration needed
-func OptionalAuthMiddleware() func(http.Handler) http.Handler {
-	// Create user service internally using factory (supports SQLite and PostgreSQL)
-	repo := NewRepository()
-	userService := NewService(repo)
-
-	// Create default auth config with optional auth
-	config := DefaultAuthConfig(userService)
-	config.RequireAuth = false
-
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			var claims *Claims
-			var user *User
-			var err error
-
-			// First try JWT cookie with OIDC validation
-			cookie, cookieErr := r.Cookie(config.CookieName)
-			if cookieErr == nil {
-				oidcConfig := getRequiredOIDCConfig()
-				claims, err = ValidateOIDCTokenFromOAuthConfig(r.Context(), cookie.Value, oidcConfig)
-				if err == nil && claims != nil {
-					// JWT is valid, get user data
-					user, err = config.Service.GetUserByEmail(r.Context(), claims.Email)
-					if err == nil {
-						// Priority 1: Use API key from JWT claims (Cognito)
-						if claims.APIKey != "" {
-							// Sync JWT key with database if different
-							if user.APIKey != claims.APIKey {
-								err := config.Service.UpdateAPIKey(r.Context(), user.Email, user.Email, claims.APIKey)
-								if err == nil {
-									user.APIKey = claims.APIKey
-								}
-							}
-						} else if user.APIKey != "" {
-							// Priority 2: Use API key from database
-							claims.APIKey = user.APIKey
-						} else {
-							// Priority 3: Generate new API key if both are empty
-							apiKey, err := config.Service.GenerateAPIKey(r.Context(), user.Email, user.Email)
-							if err == nil {
-								user.APIKey = apiKey
-								claims.APIKey = apiKey
-							}
-						}
-
-						// Add user to context and proceed
-						ctx := context.WithValue(r.Context(), ClaimsKey, claims)
-						ctx = context.WithValue(ctx, UserKey, user)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
-					}
-				}
-			}
-
-			// Fallback to API key header
-			apiKey := r.Header.Get(config.APIKeyHeader)
-			if apiKey != "" {
-				claims, err = validateAPIKey(r.Context(), config.Service, apiKey)
-				if err == nil && claims != nil {
-					// API key is valid, get user data
-					user, err = config.Service.GetUserByEmail(r.Context(), claims.Email)
-					if err == nil {
-						// Add claims and user to context and proceed
-						ctx := context.WithValue(r.Context(), ClaimsKey, claims)
-						ctx = context.WithValue(ctx, UserKey, user)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
-					}
-				}
-			}
-
-			// If we get here, authentication failed
-			if config.RequireAuth {
-				config.ErrorHandler(w, r, fmt.Errorf("no valid authentication provided"))
-				return
-			}
-
-			// Optional auth - proceed without user context
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-// APIKeyOnlyMiddleware creates middleware that only accepts API key authentication
-// Everything is initialized internally - no configuration needed
-func APIKeyOnlyMiddleware() func(http.Handler) http.Handler {
-	// Create user service internally using factory (supports SQLite and PostgreSQL)
-	repo := NewRepository()
-	userService := NewService(repo)
-
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Only try API key authentication (no JWT)
-			apiKey := r.Header.Get("X-Api-Key")
-			if apiKey != "" {
-				claims, err := validateAPIKey(r.Context(), userService, apiKey)
-				if err == nil && claims != nil {
-					// API key is valid, get user data
-					user, err := userService.GetUserByEmail(r.Context(), claims.Email)
-					if err == nil {
-						// Add claims and user to context and proceed
-						ctx := context.WithValue(r.Context(), ClaimsKey, claims)
-						ctx = context.WithValue(ctx, UserKey, user)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
-					}
-				}
-			}
-
-			// Authentication failed
-			defaultErrorHandler(w, r, fmt.Errorf("valid API key required"))
-		})
-	}
-}
+// OptionalAuthMiddleware and APIKeyOnlyMiddleware removed
+// These middleware functions required SQLite database access which is no longer supported.
+// Use RequireAuthMiddleware() instead, which supports JWT and Cognito token authentication.
 
 // GetUserFromContext extracts the authenticated user from the request context
+// It builds a User from Claims stored in context
 func GetUserFromContext(r *http.Request) (*User, bool) {
-	user, ok := r.Context().Value(UserKey).(*User)
-	return user, ok
+	claims, ok := GetClaimsFromContext(r)
+	if !ok {
+		return nil, false
+	}
+
+	user := &User{
+		Email:      claims.Email,
+		GivenName:  claims.GivenName,
+		FamilyName: claims.FamilyName,
+		Picture:    claims.Picture,
+		Role:       claims.Role,
+		APIKey:     claims.APIKey,
+	}
+
+	return user, true
 }
 
 // GetClaimsFromContext extracts the authentication claims from the request context

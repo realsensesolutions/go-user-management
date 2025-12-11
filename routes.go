@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strconv"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -17,36 +16,9 @@ type ErrorResponse struct {
 	Details map[string]string `json:"details,omitempty"`
 }
 
-// UserResponse represents a user response for API endpoints
-type UserResponse struct {
-	ID         string `json:"id"`
-	Email      string `json:"email,omitempty"` // Omitted in some contexts for privacy
-	GivenName  string `json:"givenName"`
-	FamilyName string `json:"familyName"`
-	Picture    string `json:"picture"`
-	Role       string `json:"role"`
-	CreatedAt  string `json:"createdAt"`
-	UpdatedAt  string `json:"updatedAt"`
-}
-
-// convertUserToResponse converts internal User to API response format
-func convertUserToResponse(u *User, includeEmail bool) *UserResponse {
-	resp := &UserResponse{
-		ID:         u.ID,
-		GivenName:  u.GivenName,
-		FamilyName: u.FamilyName,
-		Picture:    u.Picture,
-		Role:       u.Role,
-		CreatedAt:  u.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
-		UpdatedAt:  u.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
-	}
-
-	if includeEmail {
-		resp.Email = u.ID // ID is the email address in the new schema
-	}
-
-	return resp
-}
+// UserResponse and convertUserToResponse removed
+// These were used by RegisterUserRoutes which required SQLite database access.
+// User data now comes from Cognito via JWT claims.
 
 // writeJSON writes a JSON response
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -63,207 +35,10 @@ func writeError(w http.ResponseWriter, status int, message string, details map[s
 	})
 }
 
-// RegisterUserRoutes registers standard user management routes
-func RegisterUserRoutes(r chi.Router) {
-	// Create user service using repository factory (supports SQLite and PostgreSQL)
-	repo := NewRepository()
-	service := NewService(repo)
-
-	// Apply authentication middleware to user routes
-	r.Route("/api/users", func(r chi.Router) {
-		r.Use(RequireAuthMiddleware())
-
-		// GET /api/users/me - Get current user profile
-		r.Get("/me", getCurrentUserHandler(service))
-
-		// GET /api/users/{id} - Get user by ID (admin only or self)
-		r.Get("/{id}", getUserByIDHandler(service))
-
-		// PUT /api/users/me - Update current user profile
-		r.Put("/me", updateCurrentUserHandler(service))
-
-		// POST /api/users/api-key - Generate new API key for current user
-		r.Post("/api-key", generateAPIKeyHandler(service))
-
-		// GET /api/users/api-key - Get current API key for current user
-		r.Get("/api-key", getAPIKeyHandler(service))
-
-		// GET /api/users - List users (admin only)
-		r.Get("/", listUsersHandler(service, false)) // Default to not include email for privacy
-	})
-}
-
-// getCurrentUserHandler returns the current authenticated user
-func getCurrentUserHandler(service Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		user := MustGetUserFromContext(r)
-		response := convertUserToResponse(user, true) // Include email for own profile
-		writeJSON(w, http.StatusOK, response)
-	}
-}
-
-// getUserByIDHandler returns a user by ID (with access control)
-func getUserByIDHandler(service Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		requestedUserID := chi.URLParam(r, "id")
-		currentUser := MustGetUserFromContext(r)
-
-		// Users can only access their own profile unless they're admin
-		if currentUser.ID != requestedUserID && currentUser.Role != "admin" {
-			writeError(w, http.StatusForbidden, "Access denied", map[string]string{
-				"reason": "Can only access your own profile",
-			})
-			return
-		}
-
-		user, err := service.GetUserByID(r.Context(), requestedUserID)
-		if err != nil {
-			if err == ErrUserNotFound {
-				writeError(w, http.StatusNotFound, "User not found", nil)
-			} else {
-				writeError(w, http.StatusInternalServerError, "Failed to retrieve user", nil)
-			}
-			return
-		}
-
-		// Include email only if accessing own profile or user is admin
-		includeEmail := currentUser.ID == requestedUserID || currentUser.Role == "admin"
-		response := convertUserToResponse(user, includeEmail)
-		writeJSON(w, http.StatusOK, response)
-	}
-}
-
-// updateCurrentUserHandler updates the current user's profile
-func updateCurrentUserHandler(service Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		currentUser := MustGetUserFromContext(r)
-
-		var updateReq UpdateUserRequest
-		if err := json.NewDecoder(r.Body).Decode(&updateReq); err != nil {
-			writeError(w, http.StatusBadRequest, "Invalid request body", map[string]string{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		// Set the user ID to current user (prevent privilege escalation)
-		updateReq.ID = currentUser.ID
-
-		updatedUser, err := service.UpdateUser(r.Context(), updateReq)
-		if err != nil {
-			if err == ErrUserNotFound {
-				writeError(w, http.StatusNotFound, "User not found", nil)
-			} else {
-				writeError(w, http.StatusInternalServerError, "Failed to update user", map[string]string{
-					"error": err.Error(),
-				})
-			}
-			return
-		}
-
-		response := convertUserToResponse(updatedUser, true) // Include email for own profile
-		writeJSON(w, http.StatusOK, response)
-	}
-}
-
-// generateAPIKeyHandler generates a new API key for the current user
-func generateAPIKeyHandler(service Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		currentUser := MustGetUserFromContext(r)
-
-		apiKey, err := service.GenerateAPIKey(r.Context(), currentUser.ID, currentUser.Email)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to generate API key", map[string]string{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{
-			"apiKey": apiKey,
-		})
-	}
-}
-
-// getAPIKeyHandler returns the current API key for the user
-func getAPIKeyHandler(service Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		currentUser := MustGetUserFromContext(r)
-
-		apiKey, err := service.GetAPIKey(r.Context(), currentUser.ID)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to retrieve API key", map[string]string{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		if apiKey == "" {
-			writeError(w, http.StatusNotFound, "No API key found", map[string]string{
-				"message": "Use POST /api/users/api-key to generate one",
-			})
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{
-			"apiKey": apiKey,
-		})
-	}
-}
-
-// listUsersHandler lists users (admin only)
-func listUsersHandler(service Service, includeEmail bool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		currentUser := MustGetUserFromContext(r)
-
-		// Only admins can list users
-		if currentUser.Role != "admin" {
-			writeError(w, http.StatusForbidden, "Access denied", map[string]string{
-				"reason": "Admin role required",
-			})
-			return
-		}
-
-		// Parse query parameters
-		limitStr := r.URL.Query().Get("limit")
-		offsetStr := r.URL.Query().Get("offset")
-
-		limit := 50 // Default limit
-		if limitStr != "" {
-			if parsed, err := strconv.Atoi(limitStr); err == nil && parsed > 0 && parsed <= 100 {
-				limit = parsed
-			}
-		}
-
-		offset := 0 // Default offset
-		if offsetStr != "" {
-			if parsed, err := strconv.Atoi(offsetStr); err == nil && parsed >= 0 {
-				offset = parsed
-			}
-		}
-
-		users, err := service.ListUsers(r.Context(), limit, offset)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to list users", map[string]string{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		// Convert users to response format
-		var responses []*UserResponse
-		for _, user := range users {
-			responses = append(responses, convertUserToResponse(user, includeEmail))
-		}
-
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"users":  responses,
-			"limit":  limit,
-			"offset": offset,
-			"count":  len(responses),
-		})
-	}
-}
+// RegisterUserRoutes removed
+// This function and all user management routes required SQLite database access
+// which is no longer supported. User management is now handled via Cognito.
+// Use RequireAuthMiddleware() for authentication and SetupAuthRoutes() for OAuth flows.
 
 // SetupAuthRoutes sets up all authentication routes using the global OAuth configuration
 // This is the main entry point that replaces the complex manual setup
