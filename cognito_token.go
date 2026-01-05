@@ -122,6 +122,7 @@ func cognitoUserToClaims(cognitoUser types.UserType, oauthConfig *OAuthConfig) (
 	picture := ""
 	apiKey := ""
 	role := ""
+	userRole := ""
 
 	for _, attr := range cognitoUser.Attributes {
 		switch *attr.Name {
@@ -145,6 +146,9 @@ func cognitoUserToClaims(cognitoUser types.UserType, oauthConfig *OAuthConfig) (
 		case "custom:role":
 			role = *attr.Value
 			claims.Role = role
+		case "custom:userRole":
+			userRole = *attr.Value
+			claims.UserRole = userRole
 		}
 	}
 
@@ -242,6 +246,13 @@ func UpdateCognitoUserAttributesFromClaims(ctx context.Context, username string,
 		attributes = append(attributes, types.AttributeType{
 			Name:  aws.String("custom:role"),
 			Value: aws.String(claims.Role),
+		})
+	}
+
+	if claims.UserRole != "" {
+		attributes = append(attributes, types.AttributeType{
+			Name:  aws.String("custom:userRole"),
+			Value: aws.String(claims.UserRole),
 		})
 	}
 

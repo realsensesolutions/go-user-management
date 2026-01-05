@@ -28,6 +28,7 @@ type Claims struct {
 	Username   string `json:"username"`    // Username (usually email)
 	APIKey     string `json:"api_key"`     // API key if used for auth
 	Role       string `json:"role"`        // User role
+	UserRole   string `json:"custom:userRole"` // User role from Cognito custom attribute
 	Provider   string `json:"provider"`    // Auth provider (jwt, api_key)
 }
 

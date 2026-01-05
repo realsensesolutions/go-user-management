@@ -92,9 +92,10 @@ type OIDCClaims struct {
 	Name          string     `json:"name"`
 	GivenName     string     `json:"given_name"`
 	FamilyName    string     `json:"family_name"`
-	Picture       string     `json:"picture"`       // Added for Google profile picture
-	Identities    []Identity `json:"identities"`    // Added for identity provider information
-	APIKey        string     `json:"custom:apiKey"` // Backend-baked API key
+	Picture       string     `json:"picture"`         // Added for Google profile picture
+	Identities    []Identity `json:"identities"`      // Added for identity provider information
+	APIKey        string     `json:"custom:apiKey"`   // Backend-baked API key
+	UserRole      string     `json:"custom:userRole"` // User role from Cognito custom attribute
 	Exp           int64      `json:"exp"`
 	Iat           int64      `json:"iat"`
 }

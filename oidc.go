@@ -98,6 +98,7 @@ func ValidateOIDCTokenFromOAuthConfig(ctx context.Context, tokenString string, c
 		Picture:    oidcClaims.Picture,
 		Username:   oidcClaims.Username,
 		APIKey:     oidcClaims.APIKey,
+		UserRole:   oidcClaims.UserRole,
 		Role:       defaultRole,
 		Provider:   "cognito",
 	}
