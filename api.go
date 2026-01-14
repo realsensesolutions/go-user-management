@@ -106,6 +106,36 @@ func UpdateRole(ctx context.Context, email string, role string) (*User, error) {
 	return GetUser(ctx, email)
 }
 
+// UpdateTenantID updates the user's custom:tenantId attribute in Cognito.
+// This requires the user to logout and login again to get a fresh JWT with the new tenant.
+func UpdateTenantID(ctx context.Context, email string, tenantID string) (*User, error) {
+	if email == "" {
+		return nil, fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
+	}
+
+	if tenantID == "" {
+		return nil, fmt.Errorf("tenantID cannot be empty: %w", ErrInvalidInput)
+	}
+
+	if oauthConfig == nil {
+		return nil, fmt.Errorf("oauth config is not set")
+	}
+
+	attributes := []types.AttributeType{
+		{
+			Name:  aws.String("custom:tenantId"),
+			Value: aws.String(tenantID),
+		},
+	}
+
+	err := cognitoUpdateUserAttributes(ctx, email, attributes, oauthConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	return GetUser(ctx, email)
+}
+
 func DeleteUser(ctx context.Context, email string) error {
 	if email == "" {
 		return fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
