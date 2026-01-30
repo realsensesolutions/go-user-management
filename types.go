@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 // User represents a user in the system (Cognito-backed, but Cognito-agnostic)
@@ -47,6 +48,19 @@ type OAuthConfig struct {
 
 	// Business logic injection
 	CalculateDefaultRole func(*OIDCClaims) string `json:"-"` // Custom role calculation
+
+	// STS credential exchange configuration
+	STSRoleARN         string `json:"stsRoleArn,omitempty"`         // IAM role ARN for STS AssumeRoleWithWebIdentity
+	STSSessionName     string `json:"stsSessionName,omitempty"`     // Optional session name prefix (defaults to "user-session")
+	STSDurationSeconds int32  `json:"stsDurationSeconds,omitempty"` // Optional duration in seconds (defaults to 3600)
+}
+
+// STSCredentials represents temporary AWS credentials obtained via STS
+type STSCredentials struct {
+	AccessKeyID     string    `json:"accessKeyId"`
+	SecretAccessKey string    `json:"secretAccessKey"`
+	SessionToken    string    `json:"sessionToken"`
+	Expiration      time.Time `json:"expiration"`
 }
 
 // FlexibleBool is a custom type that can unmarshal from both boolean and string values
