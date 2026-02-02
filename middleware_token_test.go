@@ -64,6 +64,8 @@ func TestRequireAuthMiddleware_TokenAuth(t *testing.T) {
 								{Name: aws.String("given_name"), Value: aws.String("Test")},
 								{Name: aws.String("family_name"), Value: aws.String("User")},
 								{Name: aws.String("custom:apiKey"), Value: aws.String("test-token")},
+								{Name: aws.String("custom:tenantId"), Value: aws.String("bp")},
+								{Name: aws.String("custom:serviceProviderId"), Value: aws.String("inrush")},
 							},
 						},
 					},
@@ -92,6 +94,12 @@ func TestRequireAuthMiddleware_TokenAuth(t *testing.T) {
 			}
 			if claims.Email != "test@example.com" {
 				t.Errorf("expected email 'test@example.com', got '%s'", claims.Email)
+			}
+			if claims.TenantID != "bp" {
+				t.Errorf("expected TenantID 'bp', got %q", claims.TenantID)
+			}
+			if claims.ServiceProviderID != "inrush" {
+				t.Errorf("expected ServiceProviderID 'inrush', got %q", claims.ServiceProviderID)
 			}
 			w.WriteHeader(http.StatusOK)
 		}))
@@ -152,4 +160,3 @@ func TestRequireAuthMiddleware_TokenAuth(t *testing.T) {
 		}
 	})
 }
-

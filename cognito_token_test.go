@@ -59,6 +59,8 @@ func TestFindUserClaimsByToken(t *testing.T) {
 								{Name: aws.String("family_name"), Value: aws.String("User")},
 								{Name: aws.String("custom:apiKey"), Value: aws.String("valid-token")},
 								{Name: aws.String("custom:role"), Value: aws.String("FieldOfficer")},
+								{Name: aws.String("custom:tenantId"), Value: aws.String("bp")},
+								{Name: aws.String("custom:serviceProviderId"), Value: aws.String("inrush")},
 							},
 						},
 					},
@@ -97,6 +99,12 @@ func TestFindUserClaimsByToken(t *testing.T) {
 		}
 		if claims.Provider != "token" {
 			t.Errorf("expected provider 'token', got '%s'", claims.Provider)
+		}
+		if claims.TenantID != "bp" {
+			t.Errorf("expected TenantID 'bp', got '%s'", claims.TenantID)
+		}
+		if claims.ServiceProviderID != "inrush" {
+			t.Errorf("expected ServiceProviderID 'inrush', got '%s'", claims.ServiceProviderID)
 		}
 	})
 

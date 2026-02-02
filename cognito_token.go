@@ -149,6 +149,10 @@ func cognitoUserToClaims(cognitoUser types.UserType, oauthConfig *OAuthConfig) (
 		case "custom:userRole":
 			userRole = *attr.Value
 			claims.UserRole = userRole
+		case "custom:tenantId":
+			claims.TenantID = *attr.Value
+		case "custom:serviceProviderId":
+			claims.ServiceProviderID = *attr.Value
 		}
 	}
 

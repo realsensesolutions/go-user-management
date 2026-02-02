@@ -94,24 +94,26 @@ func (fb FlexibleBool) Bool() bool {
 
 // OIDCClaims represents the claims in an OIDC token
 type OIDCClaims struct {
-	Sub           string     `json:"sub"`
-	Aud           string     `json:"aud"`
-	Iss           string     `json:"iss"`
-	TokenUse      string     `json:"token_use"`
-	Scope         string     `json:"scope"`
-	Groups        []string   `json:"cognito:groups"`
-	Username      string     `json:"cognito:username"`
-	Email         string     `json:"email"`
-	EmailVerified bool       `json:"email_verified"`
-	Name          string     `json:"name"`
-	GivenName     string     `json:"given_name"`
-	FamilyName    string     `json:"family_name"`
-	Picture       string     `json:"picture"`         // Added for Google profile picture
-	Identities    []Identity `json:"identities"`      // Added for identity provider information
-	APIKey        string     `json:"custom:apiKey"`   // Backend-baked API key
-	UserRole      string     `json:"custom:userRole"` // User role from Cognito custom attribute
-	Exp           int64      `json:"exp"`
-	Iat           int64      `json:"iat"`
+	Sub               string     `json:"sub"`
+	Aud               string     `json:"aud"`
+	Iss               string     `json:"iss"`
+	TokenUse          string     `json:"token_use"`
+	Scope             string     `json:"scope"`
+	Groups            []string   `json:"cognito:groups"`
+	Username          string     `json:"cognito:username"`
+	Email             string     `json:"email"`
+	EmailVerified     bool       `json:"email_verified"`
+	Name              string     `json:"name"`
+	GivenName         string     `json:"given_name"`
+	FamilyName        string     `json:"family_name"`
+	Picture           string     `json:"picture"`         // Added for Google profile picture
+	Identities        []Identity `json:"identities"`      // Added for identity provider information
+	APIKey            string     `json:"custom:apiKey"`   // Backend-baked API key
+	UserRole          string     `json:"custom:userRole"` // User role from Cognito custom attribute
+	TenantID          string     `json:"custom:tenantId"`
+	ServiceProviderID string     `json:"custom:serviceProviderId"`
+	Exp               int64      `json:"exp"`
+	Iat               int64      `json:"iat"`
 }
 
 // Identity represents identity provider information from Cognito

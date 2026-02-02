@@ -89,21 +89,28 @@ func ValidateOIDCTokenFromOAuthConfig(ctx context.Context, tokenString string, c
 		defaultRole = config.CalculateDefaultRole(&oidcClaims)
 	}
 
-	// Convert to standardized Claims format
-	claims := &Claims{
-		Sub:        oidcClaims.Sub,
-		Email:      oidcClaims.Email,
-		GivenName:  oidcClaims.GivenName,
-		FamilyName: oidcClaims.FamilyName,
-		Picture:    oidcClaims.Picture,
-		Username:   oidcClaims.Username,
-		APIKey:     oidcClaims.APIKey,
-		UserRole:   oidcClaims.UserRole,
-		Role:       defaultRole,
-		Provider:   "cognito",
+	return oidcClaimsToClaims(&oidcClaims, defaultRole), nil
+}
+
+func oidcClaimsToClaims(oidcClaims *OIDCClaims, role string) *Claims {
+	if oidcClaims == nil {
+		return nil
 	}
 
-	return claims, nil
+	return &Claims{
+		Sub:               oidcClaims.Sub,
+		Email:             oidcClaims.Email,
+		GivenName:         oidcClaims.GivenName,
+		FamilyName:        oidcClaims.FamilyName,
+		Picture:           oidcClaims.Picture,
+		Username:          oidcClaims.Username,
+		APIKey:            oidcClaims.APIKey,
+		UserRole:          oidcClaims.UserRole,
+		TenantID:          oidcClaims.TenantID,
+		ServiceProviderID: oidcClaims.ServiceProviderID,
+		Role:              role,
+		Provider:          "cognito",
+	}
 }
 
 // Helper methods for OIDCClaims

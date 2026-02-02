@@ -20,16 +20,18 @@ const UserKey = contextKey("user")
 
 // Claims represents authentication claims for both JWT and API key authentication
 type Claims struct {
-	Sub        string `json:"sub"`         // User ID
-	Email      string `json:"email"`       // User email
-	GivenName  string `json:"given_name"`  // User first name
-	FamilyName string `json:"family_name"` // User last name
-	Picture    string `json:"picture"`     // Profile picture URL
-	Username   string `json:"username"`    // Username (usually email)
-	APIKey     string `json:"api_key"`     // API key if used for auth
-	Role       string `json:"role"`        // User role
-	UserRole   string `json:"custom:userRole"` // User role from Cognito custom attribute
-	Provider   string `json:"provider"`    // Auth provider (jwt, api_key)
+	Sub               string `json:"sub"`                      // User ID
+	Email             string `json:"email"`                    // User email
+	GivenName         string `json:"given_name"`               // User first name
+	FamilyName        string `json:"family_name"`              // User last name
+	Picture           string `json:"picture"`                  // Profile picture URL
+	Username          string `json:"username"`                 // Username (usually email)
+	APIKey            string `json:"api_key"`                  // API key if used for auth
+	Role              string `json:"role"`                     // User role
+	UserRole          string `json:"custom:userRole"`          // User role from Cognito custom attribute
+	TenantID          string `json:"custom:tenantId"`          // Tenant ID from Cognito custom attribute
+	ServiceProviderID string `json:"custom:serviceProviderId"` // Service Provider ID from Cognito custom attribute
+	Provider          string `json:"provider"`                 // Auth provider (jwt, api_key)
 }
 
 // getRequiredOIDCConfig returns the global OIDC config or panics if not set
