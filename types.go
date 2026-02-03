@@ -114,6 +114,10 @@ type OIDCClaims struct {
 	ServiceProviderID string     `json:"custom:serviceProviderId"`
 	Exp               int64      `json:"exp"`
 	Iat               int64      `json:"iat"`
+
+	// Role claims from Cognito groups (for STS AssumeRoleWithWebIdentity)
+	Roles         []string `json:"cognito:roles"`          // All allowed role ARNs from group membership
+	PreferredRole string   `json:"cognito:preferred_role"` // Highest precedence role ARN
 }
 
 // Identity represents identity provider information from Cognito

@@ -21,7 +21,7 @@ func handleSTSCredentials(w http.ResponseWriter, r *http.Request) {
 	// Get the ID token from the cookie
 	cookie, err := r.Cookie("id_token")
 	if err != nil || cookie.Value == "" {
-		log.Printf("❌ STS: No ID token cookie found: %v", err)
+		log.Printf("STS: No ID token cookie found: %v", err)
 		writeSTSError(w, "ID token not found", http.StatusUnauthorized)
 		return
 	}
@@ -29,26 +29,23 @@ func handleSTSCredentials(w http.ResponseWriter, r *http.Request) {
 	// Get OAuth config
 	config := GetOAuthConfig()
 	if config == nil {
-		log.Printf("❌ STS: OAuth config not set")
+		log.Printf("STS: OAuth config not set")
 		writeSTSError(w, "Server configuration error", http.StatusInternalServerError)
 		return
 	}
 
-	if config.STSRoleARN == "" {
-		log.Printf("❌ STS: STS role ARN not configured")
-		writeSTSError(w, "STS not configured", http.StatusServiceUnavailable)
-		return
-	}
+	// Note: STSRoleARN is no longer required - role can come from JWT token's cognito:preferred_role claim.
+	// This allows dynamic role selection based on Cognito group membership.
 
 	// Exchange ID token for STS credentials
 	creds, err := GetSTSCredentials(r.Context(), cookie.Value, config)
 	if err != nil {
-		log.Printf("❌ STS: Failed to get credentials: %v", err)
+		log.Printf("STS: Failed to get credentials: %v", err)
 		writeSTSError(w, "Failed to obtain credentials", http.StatusInternalServerError)
 		return
 	}
 
-	log.Printf("✅ STS: Issued credentials expiring at %s", creds.Expiration.Format("2006-01-02T15:04:05Z"))
+	log.Printf("STS: Issued credentials expiring at %s", creds.Expiration.Format("2006-01-02T15:04:05Z"))
 
 	// Return credentials as JSON
 	w.Header().Set("Content-Type", "application/json")
