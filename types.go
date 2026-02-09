@@ -53,6 +53,15 @@ type OAuthConfig struct {
 	STSRoleARN         string `json:"stsRoleArn,omitempty"`         // IAM role ARN for STS AssumeRoleWithWebIdentity
 	STSSessionName     string `json:"stsSessionName,omitempty"`     // Optional session name prefix (defaults to "user-session")
 	STSDurationSeconds int32  `json:"stsDurationSeconds,omitempty"` // Optional duration in seconds (defaults to 3600)
+
+	// Email (SES) configuration
+	SESRegion string `json:"sesRegion,omitempty"` // AWS region for SES (defaults to Region if empty)
+	FromEmail string `json:"fromEmail,omitempty"` // From address for invitation emails
+	AppName   string `json:"appName,omitempty"`   // Application name for email branding
+
+	// Cognito custom attribute name for user role (defaults to "custom:role")
+	// Set to "custom:userRole" for pools that use that attribute name instead.
+	RoleAttributeName string `json:"roleAttributeName,omitempty"`
 }
 
 // STSCredentials represents temporary AWS credentials obtained via STS

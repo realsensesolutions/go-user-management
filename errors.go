@@ -6,7 +6,6 @@ var (
 	ErrUserNotFound      = errors.New("user not found")
 	ErrUserAlreadyExists = errors.New("user already exists")
 	ErrInvalidInput      = errors.New("invalid input")
-	ErrInvalidAPIKey     = errors.New("invalid API key")
-	ErrPermissionDenied  = errors.New("permission denied")
+	ErrInvalidAPIKey = errors.New("invalid API key")
 )
 

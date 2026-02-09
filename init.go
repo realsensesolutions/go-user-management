@@ -8,10 +8,3 @@ func init() {
 	// OAuth state uses encrypted tokens (stateless)
 }
 
-// ValidateUserSchema removed
-// This function required SQLite database access which is no longer supported.
-// User schema validation is now handled by Cognito.
-func ValidateUserSchema() error {
-	// No-op: user schema is managed by Cognito
-	return nil
-}

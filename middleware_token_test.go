@@ -73,7 +73,7 @@ func TestRequireAuthMiddleware_TokenAuth(t *testing.T) {
 			},
 		}
 
-		setCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
+		SetCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
 			return mockClient
 		})
 
@@ -123,7 +123,7 @@ func TestRequireAuthMiddleware_TokenAuth(t *testing.T) {
 			users: map[string]*cognitoidentityprovider.ListUsersOutput{},
 		}
 
-		setCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
+		SetCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
 			return mockClient
 		})
 

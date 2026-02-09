@@ -47,7 +47,7 @@ func TestUpdateCognitoUserAttributesFromClaims(t *testing.T) {
 			updateCalls: []*cognitoidentityprovider.AdminUpdateUserAttributesInput{},
 		}
 
-		setCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
+		SetCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
 			return mockClient
 		})
 
@@ -114,7 +114,7 @@ func TestUpdateCognitoUserAttributesFromClaims(t *testing.T) {
 			updateCalls: []*cognitoidentityprovider.AdminUpdateUserAttributesInput{},
 		}
 
-		setCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
+		SetCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
 			return mockClient
 		})
 

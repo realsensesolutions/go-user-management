@@ -101,7 +101,7 @@ func cognitoCreateUser(ctx context.Context, req CreateUserRequest, oauthConfig *
 		role = "user"
 	}
 	attributes = append(attributes, types.AttributeType{
-		Name:  aws.String("custom:role"),
+		Name:  aws.String(getRoleAttributeName()),
 		Value: aws.String(role),
 	})
 
@@ -227,7 +227,7 @@ func cognitoUserToUser(cognitoUser types.UserType) (*User, error) {
 			user.FamilyName = *attr.Value
 		case "picture":
 			user.Picture = *attr.Value
-		case "custom:role":
+		case "custom:role", "custom:userRole":
 			user.Role = *attr.Value
 		case "custom:apiKey", "custom:api_key":
 			user.APIKey = *attr.Value
@@ -311,22 +311,4 @@ func wrapCognitoError(err error, operation string) error {
 	}
 
 	return fmt.Errorf("%s: %w", operation, err)
-}
-
-func isNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "UserNotFoundException") ||
-		strings.Contains(err.Error(), "does not exist") ||
-		err == ErrUserNotFound
-}
-
-func isAlreadyExists(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), "UsernameExistsException") ||
-		strings.Contains(err.Error(), "already exists") ||
-		err == ErrUserAlreadyExists
 }

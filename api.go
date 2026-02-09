@@ -22,6 +22,14 @@ func GetOAuthConfig() *OAuthConfig {
 	return oauthConfig
 }
 
+// getRoleAttributeName returns the configured Cognito custom attribute name for user role.
+func getRoleAttributeName() string {
+	if oauthConfig != nil && oauthConfig.RoleAttributeName != "" {
+		return oauthConfig.RoleAttributeName
+	}
+	return "custom:role"
+}
+
 func GetUser(ctx context.Context, email string) (*User, error) {
 	if email == "" {
 		return nil, fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
@@ -93,13 +101,12 @@ func UpdateRole(ctx context.Context, email string, role string) (*User, error) {
 
 	attributes := []types.AttributeType{
 		{
-			Name:  aws.String("custom:role"),
+			Name:  aws.String(getRoleAttributeName()),
 			Value: aws.String(role),
 		},
 	}
 
-	err := cognitoUpdateUserAttributes(ctx, email, attributes, oauthConfig)
-	if err != nil {
+	if err := cognitoUpdateUserAttributes(ctx, email, attributes, oauthConfig); err != nil {
 		return nil, err
 	}
 

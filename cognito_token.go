@@ -29,10 +29,6 @@ func defaultCognitoClientFactory(ctx context.Context, cfg aws.Config, userPoolID
 	return cognitoidentityprovider.NewFromConfig(cfg)
 }
 
-func setCognitoClientFactory(factory func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient) {
-	cognitoClientFactory = factory
-}
-
 func ResetCognitoClientFactory() {
 	cognitoClientFactory = defaultCognitoClientFactory
 }
@@ -169,6 +165,11 @@ func cognitoUserToClaims(cognitoUser types.UserType, oauthConfig *OAuthConfig) (
 		return nil, fmt.Errorf("user has no email attribute")
 	}
 
+	// Before existing fallback: promote UserRole to Role if Role is empty
+	if claims.Role == "" && claims.UserRole != "" {
+		claims.Role = claims.UserRole
+	}
+
 	if claims.Role == "" {
 		defaultRole := "user"
 		if oauthConfig.CalculateDefaultRole != nil {
@@ -187,15 +188,13 @@ func cognitoUserToClaims(cognitoUser types.UserType, oauthConfig *OAuthConfig) (
 }
 
 func loadAWSConfig(ctx context.Context, oauthConfig *OAuthConfig) (aws.Config, error) {
-	opts := []func(*config.LoadOptions) error{
-		config.WithRegion(oauthConfig.Region),
-	}
-
 	if oauthConfig.Region == "" {
 		return aws.Config{}, fmt.Errorf("region is required")
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(oauthConfig.Region),
+	)
 	if err != nil {
 		return aws.Config{}, fmt.Errorf("failed to load AWS config: %w", err)
 	}
@@ -246,17 +245,14 @@ func UpdateCognitoUserAttributesFromClaims(ctx context.Context, username string,
 		})
 	}
 
-	if claims.Role != "" {
-		attributes = append(attributes, types.AttributeType{
-			Name:  aws.String("custom:role"),
-			Value: aws.String(claims.Role),
-		})
+	roleValue := claims.UserRole
+	if roleValue == "" {
+		roleValue = claims.Role
 	}
-
-	if claims.UserRole != "" {
+	if roleValue != "" {
 		attributes = append(attributes, types.AttributeType{
-			Name:  aws.String("custom:userRole"),
-			Value: aws.String(claims.UserRole),
+			Name:  aws.String(getRoleAttributeName()),
+			Value: aws.String(roleValue),
 		})
 	}
 

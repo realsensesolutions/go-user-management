@@ -64,7 +64,7 @@ func TestCreateUserWithInvitation(t *testing.T) {
 
 		mockClient := &mockInvitationCognitoClient{}
 
-		setCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
+		SetCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
 			return mockClient
 		})
 
