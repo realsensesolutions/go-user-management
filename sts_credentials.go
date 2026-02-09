@@ -41,8 +41,12 @@ func GetSTSCredentials(ctx context.Context, idToken string, oauthConfig *OAuthCo
 		return nil, fmt.Errorf("role %s is not in the allowed roles from token", roleARN)
 	}
 
-	// Create STS client
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(oauthConfig.Region))
+	// Create STS client with anonymous credentials
+	// AssumeRoleWithWebIdentity authenticates via the web identity token (JWT), not AWS signature
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(oauthConfig.Region),
+		config.WithCredentialsProvider(aws.AnonymousCredentials{}),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}

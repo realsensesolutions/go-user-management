@@ -3,10 +3,12 @@ package user
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider"
 	"github.com/aws/aws-sdk-go-v2/service/cognitoidentityprovider/types"
 )
@@ -187,19 +189,44 @@ func cognitoUserToClaims(cognitoUser types.UserType, oauthConfig *OAuthConfig) (
 	return claims, nil
 }
 
+const jwtContextKey contextKey = "raw_jwt_token"
+
+// ContextWithJWT returns a new context with the JWT token stored for STS credential exchange.
+func ContextWithJWT(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, jwtContextKey, token)
+}
+
+func jwtFromContext(ctx context.Context) string {
+	if token, ok := ctx.Value(jwtContextKey).(string); ok {
+		return token
+	}
+	return ""
+}
+
 func loadAWSConfig(ctx context.Context, oauthConfig *OAuthConfig) (aws.Config, error) {
 	if oauthConfig.Region == "" {
 		return aws.Config{}, fmt.Errorf("region is required")
 	}
 
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(oauthConfig.Region),
-	)
-	if err != nil {
-		return aws.Config{}, fmt.Errorf("failed to load AWS config: %w", err)
+	if token := jwtFromContext(ctx); token != "" {
+		stsCreds, err := GetSTSCredentials(ctx, token, oauthConfig)
+		if err != nil {
+			log.Printf("[loadAWSConfig] STS credential exchange failed, falling back to default chain: %v", err)
+		} else {
+			return config.LoadDefaultConfig(ctx,
+				config.WithRegion(oauthConfig.Region),
+				config.WithCredentialsProvider(
+					credentials.NewStaticCredentialsProvider(
+						stsCreds.AccessKeyID,
+						stsCreds.SecretAccessKey,
+						stsCreds.SessionToken,
+					),
+				),
+			)
+		}
 	}
 
-	return cfg, nil
+	return config.LoadDefaultConfig(ctx, config.WithRegion(oauthConfig.Region))
 }
 
 func UpdateCognitoUserAttributesFromClaims(ctx context.Context, username string, claims *Claims, oauthConfig *OAuthConfig) error {
