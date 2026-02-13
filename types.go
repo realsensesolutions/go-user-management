@@ -9,12 +9,14 @@ import (
 
 // User represents a user in the system (Cognito-backed, but Cognito-agnostic)
 type User struct {
-	Email      string `json:"email"` // Primary identifier
-	GivenName  string `json:"givenName"`
-	FamilyName string `json:"familyName"`
-	Picture    string `json:"picture"`
-	Role       string `json:"role"`
-	APIKey     string `json:"apiKey,omitempty"` // Omitted if not set
+	Email             string `json:"email"` // Primary identifier
+	GivenName         string `json:"givenName"`
+	FamilyName        string `json:"familyName"`
+	Picture           string `json:"picture"`
+	Role              string `json:"role"`
+	APIKey            string `json:"apiKey,omitempty"`            // Omitted if not set
+	TenantID          string `json:"tenantId,omitempty"`          // Tenant identifier from custom:tenantId
+	ServiceProviderID string `json:"serviceProviderId,omitempty"` // Service provider from custom:serviceProviderId
 }
 
 // CreateUserRequest represents a request to create a new user

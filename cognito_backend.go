@@ -231,6 +231,10 @@ func cognitoUserToUser(cognitoUser types.UserType) (*User, error) {
 			user.Role = *attr.Value
 		case "custom:apiKey", "custom:api_key":
 			user.APIKey = *attr.Value
+		case "custom:tenantId":
+			user.TenantID = *attr.Value
+		case "custom:serviceProviderId":
+			user.ServiceProviderID = *attr.Value
 		}
 	}
 
