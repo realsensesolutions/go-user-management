@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -196,11 +197,31 @@ func ContextWithJWT(ctx context.Context, token string) context.Context {
 	return context.WithValue(ctx, jwtContextKey, token)
 }
 
-func jwtFromContext(ctx context.Context) string {
+// JWTFromContext returns the JWT token stored in the context, if any.
+func JWTFromContext(ctx context.Context) string {
 	if token, ok := ctx.Value(jwtContextKey).(string); ok {
 		return token
 	}
 	return ""
+}
+
+// WithUserAWSCredentials extracts JWT from request and returns a context that will use STS credentials for AWS operations. Use this when the operation should run with the user's permissions.
+func WithUserAWSCredentials(r *http.Request) context.Context {
+	ctx := r.Context()
+
+	// Try JWT cookie first
+	if cookie, err := r.Cookie("jwt"); err == nil && cookie.Value != "" {
+		return ContextWithJWT(ctx, cookie.Value)
+	}
+
+	// Try Authorization Bearer header
+	auth := r.Header.Get("Authorization")
+	if strings.HasPrefix(auth, "Bearer ") {
+		token := strings.TrimPrefix(auth, "Bearer ")
+		return ContextWithJWT(ctx, token)
+	}
+
+	return ctx
 }
 
 func loadAWSConfig(ctx context.Context, oauthConfig *OAuthConfig) (aws.Config, error) {
@@ -208,7 +229,7 @@ func loadAWSConfig(ctx context.Context, oauthConfig *OAuthConfig) (aws.Config, e
 		return aws.Config{}, fmt.Errorf("region is required")
 	}
 
-	if token := jwtFromContext(ctx); token != "" {
+	if token := JWTFromContext(ctx); token != "" {
 		stsCreds, err := GetSTSCredentials(ctx, token, oauthConfig)
 		if err != nil {
 			log.Printf("[loadAWSConfig] STS credential exchange failed, falling back to default chain: %v", err)

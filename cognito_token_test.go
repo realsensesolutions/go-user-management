@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -201,6 +203,81 @@ func TestFindUserClaimsByToken(t *testing.T) {
 		}
 		if err.Error() != "multiple users found with same token" {
 			t.Errorf("expected 'multiple users found with same token', got: %v", err)
+		}
+	})
+}
+
+func TestWithUserAWSCredentials(t *testing.T) {
+	t.Run("extracts JWT from cookie and puts in context", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files", nil)
+		req.AddCookie(&http.Cookie{Name: "jwt", Value: "test-jwt-token-from-cookie"})
+
+		ctx := WithUserAWSCredentials(req)
+
+		gotToken := JWTFromContext(ctx)
+		if gotToken != "test-jwt-token-from-cookie" {
+			t.Errorf("expected JWT 'test-jwt-token-from-cookie', got '%s'", gotToken)
+		}
+	})
+
+	t.Run("extracts JWT from Authorization Bearer header", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files", nil)
+		req.Header.Set("Authorization", "Bearer test-jwt-token-from-header")
+
+		ctx := WithUserAWSCredentials(req)
+
+		gotToken := JWTFromContext(ctx)
+		if gotToken != "test-jwt-token-from-header" {
+			t.Errorf("expected JWT 'test-jwt-token-from-header', got '%s'", gotToken)
+		}
+	})
+
+	t.Run("prefers cookie over Authorization header", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files", nil)
+		req.AddCookie(&http.Cookie{Name: "jwt", Value: "cookie-token"})
+		req.Header.Set("Authorization", "Bearer header-token")
+
+		ctx := WithUserAWSCredentials(req)
+
+		gotToken := JWTFromContext(ctx)
+		if gotToken != "cookie-token" {
+			t.Errorf("expected cookie token to take precedence, got '%s'", gotToken)
+		}
+	})
+
+	t.Run("returns original context if no JWT found", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files", nil)
+
+		ctx := WithUserAWSCredentials(req)
+
+		gotToken := JWTFromContext(ctx)
+		if gotToken != "" {
+			t.Errorf("expected empty JWT when none provided, got '%s'", gotToken)
+		}
+	})
+
+	t.Run("ignores empty cookie value", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files", nil)
+		req.AddCookie(&http.Cookie{Name: "jwt", Value: ""})
+		req.Header.Set("Authorization", "Bearer fallback-token")
+
+		ctx := WithUserAWSCredentials(req)
+
+		gotToken := JWTFromContext(ctx)
+		if gotToken != "fallback-token" {
+			t.Errorf("expected fallback to header when cookie empty, got '%s'", gotToken)
+		}
+	})
+
+	t.Run("ignores malformed Authorization header", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/files", nil)
+		req.Header.Set("Authorization", "Basic user:password")
+
+		ctx := WithUserAWSCredentials(req)
+
+		gotToken := JWTFromContext(ctx)
+		if gotToken != "" {
+			t.Errorf("expected empty JWT for non-Bearer auth, got '%s'", gotToken)
 		}
 	})
 }
