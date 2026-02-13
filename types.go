@@ -9,8 +9,8 @@ import (
 
 // User represents a user in the system (Cognito-backed, but Cognito-agnostic)
 type User struct {
-	Username          string `json:"username,omitempty"`          // Cognito username (stable identifier)
-	Email             string `json:"email"`                       // Email address
+	Username          string `json:"username,omitempty"` // Cognito username (stable identifier)
+	Email             string `json:"email"`              // Email address
 	GivenName         string `json:"givenName"`
 	FamilyName        string `json:"familyName"`
 	Picture           string `json:"picture"`
