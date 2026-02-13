@@ -133,3 +133,44 @@ func TestCognitoUserToUser_NoEmailError(t *testing.T) {
 		t.Error("expected error for user with no email")
 	}
 }
+
+func TestCognitoUserToUser_UsernameIsStored(t *testing.T) {
+	cognitoUser := types.UserType{
+		Username: aws.String("google_123456789"),
+		Attributes: []types.AttributeType{
+			{Name: aws.String("email"), Value: aws.String("test@example.com")},
+			{Name: aws.String("given_name"), Value: aws.String("John")},
+			{Name: aws.String("family_name"), Value: aws.String("Doe")},
+		},
+	}
+
+	user, err := cognitoUserToUser(cognitoUser)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if user.Username != "google_123456789" {
+		t.Errorf("expected username 'google_123456789', got %q", user.Username)
+	}
+	if user.Email != "test@example.com" {
+		t.Errorf("expected email 'test@example.com', got %q", user.Email)
+	}
+}
+
+func TestCognitoUserToUser_UsernameWithEmailFallback(t *testing.T) {
+	cognitoUser := types.UserType{
+		Username: aws.String("test@example.com"),
+		Attributes: []types.AttributeType{
+			{Name: aws.String("email"), Value: aws.String("test@example.com")},
+		},
+	}
+
+	user, err := cognitoUserToUser(cognitoUser)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if user.Username != "test@example.com" {
+		t.Errorf("expected username 'test@example.com', got %q", user.Username)
+	}
+}

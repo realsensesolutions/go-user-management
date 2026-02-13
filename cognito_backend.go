@@ -217,6 +217,11 @@ func cognitoListUsers(ctx context.Context, limit int32, paginationToken *string,
 func cognitoUserToUser(cognitoUser types.UserType) (*User, error) {
 	user := &User{}
 
+	// Store Cognito username (stable identifier)
+	if cognitoUser.Username != nil {
+		user.Username = *cognitoUser.Username
+	}
+
 	for _, attr := range cognitoUser.Attributes {
 		switch *attr.Name {
 		case "email":
