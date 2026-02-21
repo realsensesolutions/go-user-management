@@ -12,9 +12,31 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
+// STSClient interface for STS operations (exported for testing)
+type STSClient interface {
+	AssumeRoleWithWebIdentity(ctx context.Context, params *sts.AssumeRoleWithWebIdentityInput, optFns ...func(*sts.Options)) (*sts.AssumeRoleWithWebIdentityOutput, error)
+}
+
+var (
+	stsClientFactory func(ctx context.Context, cfg aws.Config) STSClient = defaultSTSClientFactory
+)
+
+func defaultSTSClientFactory(ctx context.Context, cfg aws.Config) STSClient {
+	return sts.NewFromConfig(cfg)
+}
+
+func ResetSTSClientFactory() {
+	stsClientFactory = defaultSTSClientFactory
+}
+
+func SetSTSClientFactory(factory func(ctx context.Context, cfg aws.Config) STSClient) {
+	stsClientFactory = factory
+}
+
 // GetSTSCredentials exchanges a Cognito ID token for temporary AWS credentials using STS AssumeRoleWithWebIdentity.
 // The role is determined dynamically from the cognito:preferred_role claim in the token,
 // with fallback to the configured STSRoleARN if no role claim is present.
+// Credentials are cached in-memory to avoid redundant STS calls within the same Lambda instance.
 func GetSTSCredentials(ctx context.Context, idToken string, oauthConfig *OAuthConfig) (*STSCredentials, error) {
 	if oauthConfig == nil {
 		return nil, fmt.Errorf("oauth config is not set")
@@ -22,6 +44,11 @@ func GetSTSCredentials(ctx context.Context, idToken string, oauthConfig *OAuthCo
 
 	if idToken == "" {
 		return nil, fmt.Errorf("ID token is required")
+	}
+
+	tokenHash := hashToken(idToken)
+	if cached := getCachedCredentials(tokenHash); cached != nil {
+		return cached, nil
 	}
 
 	// Parse the JWT to extract claims
@@ -51,7 +78,7 @@ func GetSTSCredentials(ctx context.Context, idToken string, oauthConfig *OAuthCo
 		return nil, fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	stsClient := sts.NewFromConfig(cfg)
+	stsClient := stsClientFactory(ctx, cfg)
 
 	// Build session name
 	sessionName := buildSessionName(claims, oauthConfig)
@@ -79,12 +106,16 @@ func GetSTSCredentials(ctx context.Context, idToken string, oauthConfig *OAuthCo
 		return nil, fmt.Errorf("STS returned no credentials")
 	}
 
-	return &STSCredentials{
+	creds := &STSCredentials{
 		AccessKeyID:     aws.ToString(result.Credentials.AccessKeyId),
 		SecretAccessKey: aws.ToString(result.Credentials.SecretAccessKey),
 		SessionToken:    aws.ToString(result.Credentials.SessionToken),
 		Expiration:      aws.ToTime(result.Credentials.Expiration),
-	}, nil
+	}
+
+	setCachedCredentials(tokenHash, creds)
+
+	return creds, nil
 }
 
 // selectRoleARN determines which role ARN to use for STS.
