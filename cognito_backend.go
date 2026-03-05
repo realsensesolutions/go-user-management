@@ -251,6 +251,9 @@ func cognitoUserToUser(cognitoUser types.UserType) (*User, error) {
 		}
 	}
 
+	user.UserStatus = string(cognitoUser.UserStatus)
+	user.Enabled = cognitoUser.Enabled
+
 	if user.Role == "" {
 		user.Role = "user"
 	}
@@ -302,6 +305,44 @@ func userToCognitoAttributes(user *User, update *ProfileUpdate) []types.Attribut
 	}
 
 	return attributes
+}
+
+func cognitoDisableUser(ctx context.Context, email string, oauthConfig *OAuthConfig) error {
+	client, err := getCognitoClient(ctx, oauthConfig)
+	if err != nil {
+		return err
+	}
+
+	input := &cognitoidentityprovider.AdminDisableUserInput{
+		UserPoolId: aws.String(oauthConfig.UserPoolID),
+		Username:   aws.String(email),
+	}
+
+	_, err = client.AdminDisableUser(ctx, input)
+	if err != nil {
+		return wrapCognitoError(err, "AdminDisableUser")
+	}
+
+	return nil
+}
+
+func cognitoEnableUser(ctx context.Context, email string, oauthConfig *OAuthConfig) error {
+	client, err := getCognitoClient(ctx, oauthConfig)
+	if err != nil {
+		return err
+	}
+
+	input := &cognitoidentityprovider.AdminEnableUserInput{
+		UserPoolId: aws.String(oauthConfig.UserPoolID),
+		Username:   aws.String(email),
+	}
+
+	_, err = client.AdminEnableUser(ctx, input)
+	if err != nil {
+		return wrapCognitoError(err, "AdminEnableUser")
+	}
+
+	return nil
 }
 
 func wrapCognitoError(err error, operation string) error {

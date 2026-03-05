@@ -18,6 +18,8 @@ type User struct {
 	APIKey            string `json:"apiKey,omitempty"`            // Omitted if not set
 	TenantID          string `json:"tenantId,omitempty"`          // Tenant identifier from custom:tenantId
 	ServiceProviderID string `json:"serviceProviderId,omitempty"` // Service provider from custom:serviceProviderId
+	UserStatus        string `json:"userStatus,omitempty"`        // Cognito user status (CONFIRMED, FORCE_CHANGE_PASSWORD, etc.)
+	Enabled           bool   `json:"enabled"`                     // Whether user account is enabled
 }
 
 // CreateUserRequest represents a request to create a new user

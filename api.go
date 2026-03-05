@@ -143,6 +143,74 @@ func UpdateTenantID(ctx context.Context, email string, tenantID string) (*User, 
 	return GetUser(ctx, email)
 }
 
+// DisableUser disables a user account in Cognito.
+func DisableUser(ctx context.Context, email string) error {
+	if email == "" {
+		return fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
+	}
+
+	if oauthConfig == nil {
+		return fmt.Errorf("oauth config is not set")
+	}
+
+	return cognitoDisableUser(ctx, email, oauthConfig)
+}
+
+// EnableUser re-enables a disabled user account in Cognito.
+func EnableUser(ctx context.Context, email string) error {
+	if email == "" {
+		return fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
+	}
+
+	if oauthConfig == nil {
+		return fmt.Errorf("oauth config is not set")
+	}
+
+	return cognitoEnableUser(ctx, email, oauthConfig)
+}
+
+// UpdateServiceProviderID updates the user's custom:serviceProviderId attribute in Cognito.
+func UpdateServiceProviderID(ctx context.Context, email string, serviceProviderID string) (*User, error) {
+	if email == "" {
+		return nil, fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
+	}
+
+	if serviceProviderID == "" {
+		return nil, fmt.Errorf("serviceProviderID cannot be empty: %w", ErrInvalidInput)
+	}
+
+	if oauthConfig == nil {
+		return nil, fmt.Errorf("oauth config is not set")
+	}
+
+	attributes := []types.AttributeType{
+		{
+			Name:  aws.String("custom:serviceProviderId"),
+			Value: aws.String(serviceProviderID),
+		},
+	}
+
+	err := cognitoUpdateUserAttributes(ctx, email, attributes, oauthConfig)
+	if err != nil {
+		return nil, fmt.Errorf("update service provider ID: %w", err)
+	}
+
+	return GetUser(ctx, email)
+}
+
+// SetUserPassword sets a new temporary password for a user.
+func SetUserPassword(ctx context.Context, email string, password string, permanent bool) error {
+	if email == "" {
+		return fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
+	}
+
+	if oauthConfig == nil {
+		return fmt.Errorf("oauth config is not set")
+	}
+
+	return cognitoSetTemporaryPassword(ctx, email, password, oauthConfig)
+}
+
 func DeleteUser(ctx context.Context, email string) error {
 	if email == "" {
 		return fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
