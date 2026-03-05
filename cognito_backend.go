@@ -121,6 +121,10 @@ func cognitoCreateUser(ctx context.Context, req CreateUserRequest, oauthConfig *
 }
 
 func cognitoSetTemporaryPassword(ctx context.Context, email, password string, oauthConfig *OAuthConfig) error {
+	return cognitoSetUserPassword(ctx, email, password, false, oauthConfig)
+}
+
+func cognitoSetUserPassword(ctx context.Context, email, password string, permanent bool, oauthConfig *OAuthConfig) error {
 	client, err := getCognitoClient(ctx, oauthConfig)
 	if err != nil {
 		return err
@@ -130,7 +134,7 @@ func cognitoSetTemporaryPassword(ctx context.Context, email, password string, oa
 		UserPoolId: aws.String(oauthConfig.UserPoolID),
 		Username:   aws.String(email),
 		Password:   aws.String(password),
-		Permanent:  false,
+		Permanent:  permanent,
 	}
 
 	_, err = client.AdminSetUserPassword(ctx, input)

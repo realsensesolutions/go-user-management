@@ -192,13 +192,14 @@ func UpdateServiceProviderID(ctx context.Context, email string, serviceProviderI
 
 	err := cognitoUpdateUserAttributes(ctx, email, attributes, oauthConfig)
 	if err != nil {
-		return nil, fmt.Errorf("update service provider ID: %w", err)
+		return nil, err
 	}
 
 	return GetUser(ctx, email)
 }
 
-// SetUserPassword sets a new temporary password for a user.
+// SetUserPassword sets a user's password in Cognito.
+// If permanent is false, the user must change it on next login (FORCE_CHANGE_PASSWORD state).
 func SetUserPassword(ctx context.Context, email string, password string, permanent bool) error {
 	if email == "" {
 		return fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
@@ -208,7 +209,7 @@ func SetUserPassword(ctx context.Context, email string, password string, permane
 		return fmt.Errorf("oauth config is not set")
 	}
 
-	return cognitoSetTemporaryPassword(ctx, email, password, oauthConfig)
+	return cognitoSetUserPassword(ctx, email, password, permanent, oauthConfig)
 }
 
 func DeleteUser(ctx context.Context, email string) error {
