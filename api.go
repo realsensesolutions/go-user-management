@@ -409,6 +409,30 @@ func CreateUserWithInvitation(ctx context.Context, req CreateUserRequest) (*User
 	return user, tempPassword, nil
 }
 
+// ResetTemporaryPassword generates a new temporary password for an existing Cognito user.
+// This is useful for resending invitation emails — the user must still change the password on first login.
+func ResetTemporaryPassword(ctx context.Context, email string) (string, error) {
+	if email == "" {
+		return "", fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
+	}
+
+	if oauthConfig == nil {
+		return "", fmt.Errorf("oauth config is not set")
+	}
+
+	tempPassword, err := generateSecureTemporaryPassword()
+	if err != nil {
+		return "", fmt.Errorf("failed to generate temporary password: %w", err)
+	}
+
+	err = cognitoSetTemporaryPassword(ctx, email, tempPassword, oauthConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to set temporary password: %w", err)
+	}
+
+	return tempPassword, nil
+}
+
 func generateSecureAPIKey() string {
 	bytes := make([]byte, 32)
 	if _, err := rand.Read(bytes); err != nil {
