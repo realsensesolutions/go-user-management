@@ -57,6 +57,14 @@ func (m *mockInvitationCognitoClient) AdminSetUserPassword(ctx context.Context, 
 	return &cognitoidentityprovider.AdminSetUserPasswordOutput{}, nil
 }
 
+func (m *mockInvitationCognitoClient) AdminDisableUser(ctx context.Context, params *cognitoidentityprovider.AdminDisableUserInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminDisableUserOutput, error) {
+	return &cognitoidentityprovider.AdminDisableUserOutput{}, nil
+}
+
+func (m *mockInvitationCognitoClient) AdminEnableUser(ctx context.Context, params *cognitoidentityprovider.AdminEnableUserInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminEnableUserOutput, error) {
+	return &cognitoidentityprovider.AdminEnableUserOutput{}, nil
+}
+
 func TestCreateUserWithInvitation(t *testing.T) {
 	t.Run("creates user with temporary password", func(t *testing.T) {
 		originalFactory := cognitoClientFactory

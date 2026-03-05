@@ -43,6 +43,14 @@ func (m *mockCognitoClient) AdminSetUserPassword(ctx context.Context, params *co
 	return &cognitoidentityprovider.AdminSetUserPasswordOutput{}, nil
 }
 
+func (m *mockCognitoClient) AdminDisableUser(ctx context.Context, params *cognitoidentityprovider.AdminDisableUserInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminDisableUserOutput, error) {
+	return &cognitoidentityprovider.AdminDisableUserOutput{}, nil
+}
+
+func (m *mockCognitoClient) AdminEnableUser(ctx context.Context, params *cognitoidentityprovider.AdminEnableUserInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.AdminEnableUserOutput, error) {
+	return &cognitoidentityprovider.AdminEnableUserOutput{}, nil
+}
+
 func TestFindUserClaimsByToken(t *testing.T) {
 	t.Run("returns claims for valid token", func(t *testing.T) {
 		originalFactory := cognitoClientFactory
