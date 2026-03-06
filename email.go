@@ -6,7 +6,6 @@ import (
 	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ses"
 	"github.com/aws/aws-sdk-go-v2/service/ses/types"
 )
@@ -58,11 +57,12 @@ func SendInvitationEmail(ctx context.Context, req InvitationEmailRequest) error 
 		region = oauthConfig.Region
 	}
 
-	cfg, err := awsConfig.LoadDefaultConfig(ctx,
-		awsConfig.WithRegion(region),
-	)
+	cfg, err := loadAWSConfig(ctx, oauthConfig)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
+	}
+	if region != oauthConfig.Region {
+		cfg.Region = region
 	}
 
 	client := sesClientFactory(ctx, cfg)
