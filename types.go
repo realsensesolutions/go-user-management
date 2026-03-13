@@ -13,6 +13,7 @@ type User struct {
 	Email             string `json:"email"`              // Email address
 	GivenName         string `json:"givenName"`
 	FamilyName        string `json:"familyName"`
+	Name              string `json:"name"`
 	Picture           string `json:"picture"`
 	Role              string `json:"role"`
 	APIKey            string `json:"apiKey,omitempty"`            // Omitted if not set
@@ -27,6 +28,7 @@ type CreateUserRequest struct {
 	Email      string `json:"email"`
 	GivenName  string `json:"givenName"`
 	FamilyName string `json:"familyName"`
+	Name       string `json:"name,omitempty"`
 	Picture    string `json:"picture,omitempty"`
 	Role       string `json:"role,omitempty"`
 }
@@ -35,6 +37,7 @@ type CreateUserRequest struct {
 type ProfileUpdate struct {
 	GivenName  *string `json:"givenName,omitempty"`
 	FamilyName *string `json:"familyName,omitempty"`
+	Name       *string `json:"name,omitempty"`
 	Picture    *string `json:"picture,omitempty"`
 }
 

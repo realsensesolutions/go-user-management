@@ -89,6 +89,13 @@ func cognitoCreateUser(ctx context.Context, req CreateUserRequest, oauthConfig *
 		})
 	}
 
+	if req.Name != "" {
+		attributes = append(attributes, types.AttributeType{
+			Name:  aws.String("name"),
+			Value: aws.String(req.Name),
+		})
+	}
+
 	if req.Picture != "" {
 		attributes = append(attributes, types.AttributeType{
 			Name:  aws.String("picture"),
@@ -234,6 +241,8 @@ func cognitoUserToUser(cognitoUser types.UserType) (*User, error) {
 			user.GivenName = *attr.Value
 		case "family_name":
 			user.FamilyName = *attr.Value
+		case "name":
+			user.Name = *attr.Value
 		case "picture":
 			user.Picture = *attr.Value
 		case "custom:role", "custom:userRole":
@@ -281,6 +290,12 @@ func userToCognitoAttributes(user *User, update *ProfileUpdate) []types.Attribut
 				Value: aws.String(*update.FamilyName),
 			})
 		}
+		if update.Name != nil {
+			attributes = append(attributes, types.AttributeType{
+				Name:  aws.String("name"),
+				Value: aws.String(*update.Name),
+			})
+		}
 		if update.Picture != nil {
 			attributes = append(attributes, types.AttributeType{
 				Name:  aws.String("picture"),
@@ -298,6 +313,12 @@ func userToCognitoAttributes(user *User, update *ProfileUpdate) []types.Attribut
 			attributes = append(attributes, types.AttributeType{
 				Name:  aws.String("family_name"),
 				Value: aws.String(user.FamilyName),
+			})
+		}
+		if user.Name != "" {
+			attributes = append(attributes, types.AttributeType{
+				Name:  aws.String("name"),
+				Value: aws.String(user.Name),
 			})
 		}
 		if user.Picture != "" {
