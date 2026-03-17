@@ -100,6 +100,7 @@ func oidcClaimsToClaims(oidcClaims *OIDCClaims, role string) *Claims {
 	return &Claims{
 		Sub:               oidcClaims.Sub,
 		Email:             oidcClaims.Email,
+		Name:              oidcClaims.Name,
 		GivenName:         oidcClaims.GivenName,
 		FamilyName:        oidcClaims.FamilyName,
 		Picture:           oidcClaims.Picture,

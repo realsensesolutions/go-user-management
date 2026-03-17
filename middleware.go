@@ -22,6 +22,7 @@ const UserKey = contextKey("user")
 type Claims struct {
 	Sub               string `json:"sub"`                      // User ID
 	Email             string `json:"email"`                    // User email
+	Name              string `json:"name"`                     // Full name (Cognito name field)
 	GivenName         string `json:"given_name"`               // User first name
 	FamilyName        string `json:"family_name"`              // User last name
 	Picture           string `json:"picture"`                  // Profile picture URL
