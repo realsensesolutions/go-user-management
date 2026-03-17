@@ -118,6 +118,48 @@ func TestFindUserClaimsByToken(t *testing.T) {
 		}
 	})
 
+	t.Run("maps name attribute to claims.Name", func(t *testing.T) {
+		originalFactory := cognitoClientFactory
+		defer func() { cognitoClientFactory = originalFactory }()
+
+		mockClient := &mockCognitoClient{
+			users: map[string]*cognitoidentityprovider.ListUsersOutput{
+				`custom:apiKey = "token-with-name"`: {
+					Users: []types.UserType{
+						{
+							Username: aws.String("nameduser"),
+							Attributes: []types.AttributeType{
+								{Name: aws.String("sub"), Value: aws.String("user-456")},
+								{Name: aws.String("email"), Value: aws.String("named@example.com")},
+								{Name: aws.String("name"), Value: aws.String("Jane Doe")},
+								{Name: aws.String("custom:apiKey"), Value: aws.String("token-with-name")},
+								{Name: aws.String("custom:role"), Value: aws.String("user")},
+							},
+						},
+					},
+				},
+			},
+		}
+
+		SetCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
+			return mockClient
+		})
+
+		ctx := context.Background()
+		config := &OAuthConfig{
+			UserPoolID: "us-east-1_test",
+			Region:     "us-east-1",
+		}
+
+		claims, err := FindUserClaimsByToken(ctx, "token-with-name", config)
+		if err != nil {
+			t.Fatalf("expected no error, got: %v", err)
+		}
+		if claims.Name != "Jane Doe" {
+			t.Errorf("expected Name 'Jane Doe', got '%s'", claims.Name)
+		}
+	})
+
 	t.Run("returns error for unknown token", func(t *testing.T) {
 		originalFactory := cognitoClientFactory
 		defer func() { cognitoClientFactory = originalFactory }()

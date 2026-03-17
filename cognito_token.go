@@ -138,6 +138,8 @@ func cognitoUserToClaims(cognitoUser types.UserType, oauthConfig *OAuthConfig) (
 		case "family_name":
 			familyName = *attr.Value
 			claims.FamilyName = familyName
+		case "name":
+			claims.Name = *attr.Value
 		case "picture":
 			picture = *attr.Value
 			claims.Picture = picture
