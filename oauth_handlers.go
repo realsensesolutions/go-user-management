@@ -18,9 +18,15 @@ const (
 	RetryQueryParam       = "oauth_retry"
 )
 
+// oauth2Servicer is the subset of OAuth2Service used by the HTTP handlers.
+type oauth2Servicer interface {
+	GenerateAuthURL(redirectURL, loginHint string) (string, error)
+	HandleCallback(code, state string) (*Claims, string, string, error)
+}
+
 // OAuth2Handlers provides HTTP handlers for OAuth2 flow
 type OAuth2Handlers struct {
-	oauth2Service   *OAuth2Service
+	oauth2Service   oauth2Servicer
 	oauthConfig     *OAuthConfig
 	getFrontEndURL  func() string
 	getCookieDomain func() string
@@ -40,11 +46,10 @@ func NewOAuth2Handlers(service *OAuth2Service, oauthConfig *OAuthConfig, frontEn
 
 // LoginHandler handles OIDC login requests
 func (h *OAuth2Handlers) LoginHandler(w http.ResponseWriter, r *http.Request) {
-	// Extract redirect URL from query parameters
 	redirectURL := r.URL.Query().Get("redirect_url")
+	loginHint := r.URL.Query().Get("login_hint")
 
-	// Generate OAuth authorization URL
-	authURL, err := h.oauth2Service.GenerateAuthURL(redirectURL)
+	authURL, err := h.oauth2Service.GenerateAuthURL(redirectURL, loginHint)
 	if err != nil {
 		log.Printf("❌ Failed to generate OAuth authorization URL: %v", err)
 		h.writeJSONError(w, http.StatusInternalServerError, "Failed to generate authorization URL")
@@ -119,7 +124,7 @@ func (h *OAuth2Handlers) CallbackHandler(w http.ResponseWriter, r *http.Request)
 		}
 
 		// Generate new OAuth authorization URL with retry tracking
-		authURL, authErr := h.oauth2Service.GenerateAuthURL(originalRedirectURL)
+		authURL, authErr := h.oauth2Service.GenerateAuthURL(originalRedirectURL, "")
 		if authErr != nil {
 			log.Printf("❌ Failed to generate retry OAuth authorization URL: %v", authErr)
 			h.writeJSONError(w, http.StatusInternalServerError, "Failed to restart authentication")

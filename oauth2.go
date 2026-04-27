@@ -12,8 +12,9 @@ import (
 // OAuth2Service handles complete OAuth2/OIDC flows
 // Note: Only validates JWT tokens, no database operations
 type OAuth2Service struct {
-	stateRepo   StateRepository
-	oauthConfig *OAuthConfig
+	stateRepo           StateRepository
+	oauthConfig         *OAuthConfig
+	oauth2ConfigFactory func() (*oauth2.Config, error)
 }
 
 // NewOAuth2ServiceFromOAuthConfig creates a new OAuth2 service with OAuthConfig
@@ -67,19 +68,18 @@ func validateOAuthConfig(config *OAuthConfig) error {
 	return nil
 }
 
-// GenerateAuthURL generates an OAuth2 authorization URL with state management
-func (s *OAuth2Service) GenerateAuthURL(redirectURL string) (string, error) {
+// GenerateAuthURL generates an OAuth2 authorization URL with state management.
+// If loginHint is non-empty, it is forwarded to the provider via the login_hint parameter.
+func (s *OAuth2Service) GenerateAuthURL(redirectURL, loginHint string) (string, error) {
 	log.Printf("🔍 [OAuth2Service] Starting GenerateAuthURL for redirectURL: %s", redirectURL)
 
-	// Initialize OAuth2 config
-	oauth2Config, err := s.createOAuth2Config()
+	oauth2Config, err := s.buildOAuth2Config()
 	if err != nil {
 		log.Printf("❌ [OAuth2Service] Failed to initialize OAuth2 config: %v", err)
 		return "", fmt.Errorf("failed to initialize OAuth2 config: %w", err)
 	}
 	log.Printf("✅ [OAuth2Service] OAuth2 config initialized successfully")
 
-	// Generate secure nonce for state
 	nonce, err := GenerateSecureState()
 	if err != nil {
 		log.Printf("❌ [OAuth2Service] Failed to generate nonce: %v", err)
@@ -87,8 +87,6 @@ func (s *OAuth2Service) GenerateAuthURL(redirectURL string) (string, error) {
 	}
 	log.Printf("✅ [OAuth2Service] Generated secure nonce: %s", nonce[:8]+"...")
 
-	// Create state - for encrypted repo, this is a no-op (state is in the encrypted token)
-	// For SQLite repo, this stores in database
 	log.Printf("🔄 [OAuth2Service] About to prepare state...")
 	startTime := time.Now()
 	err = s.stateRepo.StoreState(nonce, redirectURL, time.Now().Add(5*time.Minute))
@@ -100,9 +98,6 @@ func (s *OAuth2Service) GenerateAuthURL(redirectURL string) (string, error) {
 	}
 	log.Printf("✅ [OAuth2Service] State prepared successfully in %v", duration)
 
-	// For encrypted state repository, generate the encrypted state token to use as OAuth state parameter
-	// The encrypted token contains: timestamp + redirectURL + nonce
-	// For SQLite repo, use the nonce directly (stored in DB)
 	var oauthState string
 	if encryptedRepo, ok := s.stateRepo.(*EncryptedStateRepository); ok {
 		oauthState, err = encryptedRepo.GenerateEncryptedState(nonce, redirectURL)
@@ -115,10 +110,22 @@ func (s *OAuth2Service) GenerateAuthURL(redirectURL string) (string, error) {
 		log.Printf("✅ [OAuth2Service] Using nonce as state (stored in database)")
 	}
 
-	// Generate authorization URL with state
-	authURL := oauth2Config.AuthCodeURL(oauthState, oauth2.AccessTypeOffline)
+	opts := []oauth2.AuthCodeOption{oauth2.AccessTypeOffline}
+	if loginHint != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("login_hint", loginHint))
+	}
+
+	authURL := oauth2Config.AuthCodeURL(oauthState, opts...)
 	log.Printf("✅ [OAuth2Service] Generated auth URL successfully")
 	return authURL, nil
+}
+
+// buildOAuth2Config returns the oauth2.Config to use, preferring the injected factory when set.
+func (s *OAuth2Service) buildOAuth2Config() (*oauth2.Config, error) {
+	if s.oauth2ConfigFactory != nil {
+		return s.oauth2ConfigFactory()
+	}
+	return s.createOAuth2Config()
 }
 
 // HandleCallback processes an OAuth2 callback and returns user claims, raw ID token, and redirect URL
