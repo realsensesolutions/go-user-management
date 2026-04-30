@@ -46,6 +46,10 @@ func (m *mockUpdateCognitoClient) AdminEnableUser(ctx context.Context, params *c
 	return &cognitoidentityprovider.AdminEnableUserOutput{}, nil
 }
 
+func (m *mockUpdateCognitoClient) DescribeUserPool(ctx context.Context, params *cognitoidentityprovider.DescribeUserPoolInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolOutput, error) {
+	return &cognitoidentityprovider.DescribeUserPoolOutput{}, nil
+}
+
 func TestUpdateCognitoUserAttributesFromClaims(t *testing.T) {
 	t.Run("updates user attributes in Cognito", func(t *testing.T) {
 		originalFactory := cognitoClientFactory

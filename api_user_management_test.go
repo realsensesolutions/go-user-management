@@ -86,6 +86,10 @@ func (m *mockUserMgmtCognitoClient) AdminEnableUser(ctx context.Context, params 
 	return &cognitoidentityprovider.AdminEnableUserOutput{}, nil
 }
 
+func (m *mockUserMgmtCognitoClient) DescribeUserPool(_ context.Context, _ *cognitoidentityprovider.DescribeUserPoolInput, _ ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolOutput, error) {
+	return &cognitoidentityprovider.DescribeUserPoolOutput{}, nil
+}
+
 func setupMockUserMgmt(t *testing.T) *mockUserMgmtCognitoClient {
 	t.Helper()
 	originalFactory := cognitoClientFactory

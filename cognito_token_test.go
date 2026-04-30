@@ -51,6 +51,10 @@ func (m *mockCognitoClient) AdminEnableUser(ctx context.Context, params *cognito
 	return &cognitoidentityprovider.AdminEnableUserOutput{}, nil
 }
 
+func (m *mockCognitoClient) DescribeUserPool(ctx context.Context, params *cognitoidentityprovider.DescribeUserPoolInput, optFns ...func(*cognitoidentityprovider.Options)) (*cognitoidentityprovider.DescribeUserPoolOutput, error) {
+	return &cognitoidentityprovider.DescribeUserPoolOutput{}, nil
+}
+
 func TestFindUserClaimsByToken(t *testing.T) {
 	t.Run("returns claims for valid token", func(t *testing.T) {
 		originalFactory := cognitoClientFactory

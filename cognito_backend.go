@@ -370,6 +370,32 @@ func cognitoEnableUser(ctx context.Context, email string, oauthConfig *OAuthConf
 	return nil
 }
 
+// GetUserPoolPreSignUpARN returns the ARN of the pre-sign-up Lambda trigger
+// configured on the given Cognito user pool, or an empty string if no
+// pre-sign-up trigger is configured. Returns an error if the describe call
+// fails or the pool does not exist.
+func GetUserPoolPreSignUpARN(ctx context.Context, userPoolID string) (string, error) {
+	if userPoolID == "" {
+		return "", fmt.Errorf("userPoolID is required")
+	}
+
+	client, err := getCognitoClient(ctx, oauthConfig)
+	if err != nil {
+		return "", fmt.Errorf("get pre-sign-up ARN: %w", err)
+	}
+
+	out, err := client.DescribeUserPool(ctx, &cognitoidentityprovider.DescribeUserPoolInput{
+		UserPoolId: aws.String(userPoolID),
+	})
+	if err != nil {
+		return "", fmt.Errorf("describe user pool %s: %w", userPoolID, err)
+	}
+	if out.UserPool == nil || out.UserPool.LambdaConfig == nil || out.UserPool.LambdaConfig.PreSignUp == nil {
+		return "", nil
+	}
+	return *out.UserPool.LambdaConfig.PreSignUp, nil
+}
+
 func wrapCognitoError(err error, operation string) error {
 	log.Printf("❌ [Cognito] %s failed: %v", operation, err)
 
