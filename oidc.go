@@ -17,6 +17,19 @@ var (
 )
 
 // initOIDCProviderFromOAuthConfig initializes the OIDC provider with OAuthConfig.
+//
+// Issuer-URL resolution order:
+//  1. config.IssuerURL — used verbatim when set. This is the generic OIDC
+//     path (Authentik, Keycloak, Auth0, ...) and bypasses Cognito entirely.
+//  2. https://cognito-idp.<Region>.amazonaws.com/<UserPoolID> — the legacy
+//     AWS Cognito issuer URL, kept for back-compat with existing deployments.
+//
+// As a side effect, when config.LogoutURL is empty and the IdP's discovery
+// document advertises an end_session_endpoint (RP-initiated logout per
+// OIDC Session Management 1.0 spec), the discovered URL is written back
+// into config.LogoutURL so LogoutHandler can use it without operators
+// having to plumb a separate OIDC_LOGOUT_URL env var. An explicitly set
+// config.LogoutURL is left untouched so it remains a hard override.
 func initOIDCProviderFromOAuthConfig(config *OAuthConfig) (*oidc.Provider, error) {
 	providerMutex.Lock()
 	defer providerMutex.Unlock()
@@ -65,6 +78,16 @@ func initOIDCProviderFromOAuthConfig(config *OAuthConfig) (*oidc.Provider, error
 
 	log.Printf("✅ OIDC provider initialized for issuer: %s", issuerURL)
 	return oidcProvider, nil
+}
+
+// resetOIDCProviderForTesting clears the cached provider/verifier so tests
+// that initialize the provider against an httptest server can run without
+// leaking state across subtests. Not part of the public API.
+func resetOIDCProviderForTesting() {
+	providerMutex.Lock()
+	defer providerMutex.Unlock()
+	oidcProvider = nil
+	oidcVerifier = nil
 }
 
 // ValidateOIDCTokenFromOAuthConfig validates an OIDC ID token using OAuthConfig and returns claims
