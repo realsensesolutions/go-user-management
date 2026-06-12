@@ -16,7 +16,7 @@ var (
 	providerMutex sync.Mutex
 )
 
-// initOIDCProviderFromOAuthConfig initializes the OIDC provider with OAuthConfig
+// initOIDCProviderFromOAuthConfig initializes the OIDC provider with OAuthConfig.
 func initOIDCProviderFromOAuthConfig(config *OAuthConfig) (*oidc.Provider, error) {
 	providerMutex.Lock()
 	defer providerMutex.Unlock()
@@ -25,15 +25,20 @@ func initOIDCProviderFromOAuthConfig(config *OAuthConfig) (*oidc.Provider, error
 		return oidcProvider, nil
 	}
 
-	if config.UserPoolID == "" {
-		return nil, fmt.Errorf("userPoolID is required in OAuthConfig")
+	if config.ClientID == "" {
+		return nil, fmt.Errorf("clientID is required in OAuthConfig")
 	}
 
-	if config.Region == "" {
-		return nil, fmt.Errorf("region is required in OAuthConfig")
+	issuerURL := config.IssuerURL
+	if issuerURL == "" {
+		if config.UserPoolID == "" {
+			return nil, fmt.Errorf("either issuerURL or userPoolID is required in OAuthConfig")
+		}
+		if config.Region == "" {
+			return nil, fmt.Errorf("region is required in OAuthConfig when issuerURL is unset (Cognito mode)")
+		}
+		issuerURL = fmt.Sprintf("https://cognito-idp.%s.amazonaws.com/%s", config.Region, config.UserPoolID)
 	}
-
-	issuerURL := fmt.Sprintf("https://cognito-idp.%s.amazonaws.com/%s", config.Region, config.UserPoolID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -44,14 +49,19 @@ func initOIDCProviderFromOAuthConfig(config *OAuthConfig) (*oidc.Provider, error
 		return nil, fmt.Errorf("failed to create OIDC provider: %w", err)
 	}
 
-	// Initialize the ID token verifier
-	if config.ClientID == "" {
-		return nil, fmt.Errorf("clientID is required in OAuthConfig")
-	}
-
 	oidcVerifier = oidcProvider.Verifier(&oidc.Config{
 		ClientID: config.ClientID,
 	})
+
+	if config.LogoutURL == "" {
+		var meta struct {
+			EndSessionEndpoint string `json:"end_session_endpoint"`
+		}
+		if claimErr := oidcProvider.Claims(&meta); claimErr == nil && meta.EndSessionEndpoint != "" {
+			config.LogoutURL = meta.EndSessionEndpoint
+			log.Printf("✅ OIDC RP-initiated logout endpoint auto-discovered: %s", meta.EndSessionEndpoint)
+		}
+	}
 
 	log.Printf("✅ OIDC provider initialized for issuer: %s", issuerURL)
 	return oidcProvider, nil

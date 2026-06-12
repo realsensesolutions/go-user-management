@@ -54,6 +54,12 @@ type OAuthConfig struct {
 	FrontEndURL  string   `json:"frontEndUrl"`      // Frontend base URL
 	Scopes       []string `json:"scopes"`
 
+	// Generic OIDC fields. When IssuerURL is non-empty, the OIDC provider is
+	// initialized against this URL (via go-oidc discovery) instead of being
+	// constructed from the Cognito Region/UserPoolID pair.
+	IssuerURL string `json:"issuerUrl,omitempty"`
+	LogoutURL string `json:"logoutUrl,omitempty"`
+
 	// Business logic injection
 	CalculateDefaultRole func(*OIDCClaims) string `json:"-"` // Custom role calculation
 

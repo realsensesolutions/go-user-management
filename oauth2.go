@@ -45,20 +45,22 @@ func validateOAuthConfig(config *OAuthConfig) error {
 	if config.ClientSecret == "" {
 		missing = append(missing, "ClientSecret")
 	}
-	if config.UserPoolID == "" {
-		missing = append(missing, "UserPoolID")
-	}
 	if config.RedirectURI == "" {
 		missing = append(missing, "RedirectURI")
-	}
-	if config.Region == "" {
-		missing = append(missing, "Region")
 	}
 	if config.FrontEndURL == "" {
 		missing = append(missing, "FrontEndURL")
 	}
 	if len(config.Scopes) == 0 {
 		missing = append(missing, "Scopes")
+	}
+	if config.IssuerURL == "" {
+		if config.UserPoolID == "" {
+			missing = append(missing, "UserPoolID (or IssuerURL)")
+		}
+		if config.Region == "" {
+			missing = append(missing, "Region (or IssuerURL)")
+		}
 	}
 
 	if len(missing) > 0 {
