@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
+	"sort"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -28,6 +30,13 @@ func getRoleAttributeName() string {
 		return oauthConfig.RoleAttributeName
 	}
 	return "custom:role"
+}
+
+func normalizeCustomAttributeName(name string) string {
+	if !strings.HasPrefix(name, "custom:") {
+		return "custom:" + name
+	}
+	return name
 }
 
 func GetUser(ctx context.Context, email string) (*User, error) {
@@ -386,27 +395,91 @@ func CreateUserWithInvitation(ctx context.Context, req CreateUserRequest) (*User
 		return nil, "", fmt.Errorf("oauth config is not set")
 	}
 
-	cognitoUser, err := cognitoCreateUser(ctx, req, oauthConfig)
+	_, err := cognitoCreateUser(ctx, req, oauthConfig)
 	if err != nil {
 		return nil, "", err
 	}
 
+	rollback := func() {
+		if delErr := cognitoDeleteUser(ctx, req.Email, oauthConfig); delErr != nil {
+			log.Printf("⚠️ [Cognito] rollback AdminDeleteUser failed for %s: %v", req.Email, delErr)
+		}
+	}
+
 	tempPassword, err := generateSecureTemporaryPassword()
 	if err != nil {
+		rollback()
 		return nil, "", fmt.Errorf("failed to generate temporary password: %w", err)
 	}
 
 	err = cognitoSetTemporaryPassword(ctx, req.Email, tempPassword, oauthConfig)
 	if err != nil {
+		rollback()
 		return nil, "", fmt.Errorf("failed to set temporary password: %w", err)
 	}
 
-	user, err := cognitoUserToUser(*cognitoUser)
+	verifiedUser, err := cognitoGetUser(ctx, req.Email, oauthConfig)
 	if err != nil {
+		rollback()
+		return nil, "", fmt.Errorf("failed to verify user after provisioning: %w", err)
+	}
+
+	if err := assertRequiredCustomAttributes(verifiedUser, req); err != nil {
+		rollback()
 		return nil, "", err
 	}
 
+	user, err := cognitoUserToUser(*verifiedUser)
+	if err != nil {
+		rollback()
+		return nil, "", fmt.Errorf("failed to convert verified user: %w", err)
+	}
+
 	return user, tempPassword, nil
+}
+
+func assertRequiredCustomAttributes(cognitoUser *types.UserType, req CreateUserRequest) error {
+	if cognitoUser == nil {
+		return fmt.Errorf("provisioning verification failed: user is nil")
+	}
+
+	attrs := make(map[string]string, len(cognitoUser.Attributes))
+	for _, attr := range cognitoUser.Attributes {
+		if attr.Name != nil && attr.Value != nil {
+			attrs[*attr.Name] = *attr.Value
+		}
+	}
+
+	roleAttr := getRoleAttributeName()
+	expectedRole := req.Role
+	if expectedRole == "" {
+		expectedRole = "user"
+	}
+	if got, ok := attrs[roleAttr]; !ok || got != expectedRole {
+		return fmt.Errorf("provisioning verification failed: missing or incorrect %s", roleAttr)
+	}
+
+	if len(req.CustomAttributes) > 0 {
+		keys := make([]string, 0, len(req.CustomAttributes))
+		for k, v := range req.CustomAttributes {
+			if v != "" {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			expected := req.CustomAttributes[key]
+			if expected == "" {
+				continue
+			}
+			attrName := normalizeCustomAttributeName(key)
+			if got, ok := attrs[attrName]; !ok || got != expected {
+				return fmt.Errorf("provisioning verification failed: missing or incorrect %s", attrName)
+			}
+		}
+	}
+
+	return nil
 }
 
 // ResetTemporaryPassword generates a new temporary password for an existing Cognito user.

@@ -25,12 +25,13 @@ type User struct {
 
 // CreateUserRequest represents a request to create a new user
 type CreateUserRequest struct {
-	Email      string `json:"email"`
-	GivenName  string `json:"givenName"`
-	FamilyName string `json:"familyName"`
-	Name       string `json:"name,omitempty"`
-	Picture    string `json:"picture,omitempty"`
-	Role       string `json:"role,omitempty"`
+	Email            string            `json:"email"`
+	GivenName        string            `json:"givenName"`
+	FamilyName       string            `json:"familyName"`
+	Name             string            `json:"name,omitempty"`
+	Picture          string            `json:"picture,omitempty"`
+	Role             string            `json:"role,omitempty"`
+	CustomAttributes map[string]string `json:"customAttributes,omitempty"`
 }
 
 // ProfileUpdate represents fields that can be updated in a user profile

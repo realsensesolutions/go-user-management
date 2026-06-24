@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -111,6 +112,27 @@ func cognitoCreateUser(ctx context.Context, req CreateUserRequest, oauthConfig *
 		Name:  aws.String(getRoleAttributeName()),
 		Value: aws.String(role),
 	})
+
+	if len(req.CustomAttributes) > 0 {
+		keys := make([]string, 0, len(req.CustomAttributes))
+		for k, v := range req.CustomAttributes {
+			if v != "" {
+				keys = append(keys, k)
+			}
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			val := req.CustomAttributes[key]
+			if val == "" {
+				continue
+			}
+			attrName := normalizeCustomAttributeName(key)
+			attributes = append(attributes, types.AttributeType{
+				Name:  aws.String(attrName),
+				Value: aws.String(val),
+			})
+		}
+	}
 
 	input := &cognitoidentityprovider.AdminCreateUserInput{
 		UserPoolId:     aws.String(oauthConfig.UserPoolID),
