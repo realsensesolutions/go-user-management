@@ -172,7 +172,7 @@ func TestCreateUserWithInvitation_RollbackOnPasswordSetFailure(t *testing.T) {
 	}
 }
 
-func TestCognitoCreateUser_IncludesOptionalTenantAndServiceProviderAttrs(t *testing.T) {
+func TestCognitoCreateUser_IncludesProvidedCustomAttributes(t *testing.T) {
 	originalFactory := cognitoClientFactory
 	defer func() { cognitoClientFactory = originalFactory }()
 
@@ -187,13 +187,13 @@ func TestCognitoCreateUser_IncludesOptionalTenantAndServiceProviderAttrs(t *test
 
 	ctx := context.Background()
 	req := CreateUserRequest{
-		Email:      "tenant@example.com",
-		GivenName:  "Tenant",
+		Email:      "attrs@example.com",
+		GivenName:  "Custom",
 		FamilyName: "User",
 		Role:       "admin",
 		CustomAttributes: map[string]string{
-			"custom:tenantId":          "suncor",
-			"custom:serviceProviderId": "inrush",
+			"custom:orgId":    "org-42",
+			"custom:regionId": "us-west",
 		},
 	}
 
@@ -206,11 +206,11 @@ func TestCognitoCreateUser_IncludesOptionalTenantAndServiceProviderAttrs(t *test
 	}
 
 	attrs := mockClient.createUserInput.UserAttributes
-	if val, ok := attributeValue(attrs, "custom:tenantId"); !ok || val != "suncor" {
-		t.Errorf("expected custom:tenantId=suncor, got %q ok=%v", val, ok)
+	if val, ok := attributeValue(attrs, "custom:orgId"); !ok || val != "org-42" {
+		t.Errorf("expected custom:orgId=org-42, got %q ok=%v", val, ok)
 	}
-	if val, ok := attributeValue(attrs, "custom:serviceProviderId"); !ok || val != "inrush" {
-		t.Errorf("expected custom:serviceProviderId=inrush, got %q ok=%v", val, ok)
+	if val, ok := attributeValue(attrs, "custom:regionId"); !ok || val != "us-west" {
+		t.Errorf("expected custom:regionId=us-west, got %q ok=%v", val, ok)
 	}
 }
 
@@ -414,5 +414,128 @@ func TestCreateUserWithInvitation_CustomAttributesVerifiedOnCreate(t *testing.T)
 	}
 	if mockClient.deleteUserCalled {
 		t.Error("did not expect rollback when custom attributes verified")
+	}
+}
+
+func TestCreateUserWithInvitation_RollbackOnAdminGetUserFailure(t *testing.T) {
+	originalFactory := cognitoClientFactory
+	defer func() { cognitoClientFactory = originalFactory }()
+
+	getUserErr := errors.New("InternalErrorException: service unavailable")
+	mockClient := &mockProvisioningCognitoClient{
+		getUserErr: getUserErr,
+	}
+	SetCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
+		return mockClient
+	})
+	SetOAuthConfig(&OAuthConfig{
+		UserPoolID: "us-east-1_test",
+		Region:     "us-east-1",
+	})
+
+	ctx := context.Background()
+	req := CreateUserRequest{
+		Email:      "getuser-fail@example.com",
+		GivenName:  "GetUser",
+		FamilyName: "Fail",
+		Role:       "user",
+	}
+
+	user, tempPassword, err := CreateUserWithInvitation(ctx, req)
+	if err == nil {
+		t.Fatal("expected error when AdminGetUser fails")
+	}
+	if user != nil {
+		t.Error("expected nil user on AdminGetUser failure")
+	}
+	if tempPassword != "" {
+		t.Error("expected empty temporary password on failure")
+	}
+	if !mockClient.adminGetUserCalled {
+		t.Error("expected AdminGetUser to be called for verification")
+	}
+	if !mockClient.deleteUserCalled {
+		t.Error("expected AdminDeleteUser to be called for rollback")
+	}
+	if mockClient.deleteUserInput == nil || aws.ToString(mockClient.deleteUserInput.Username) != "getuser-fail@example.com" {
+		t.Errorf("expected rollback delete for getuser-fail@example.com, got %v", mockClient.deleteUserInput)
+	}
+}
+
+func TestNormalizeCustomAttributes_DedupesEquivalentKeys(t *testing.T) {
+	attrs, err := normalizeCustomAttributes(map[string]string{
+		"tenantId":        "bp",
+		"custom:tenantId": "bp",
+	}, "custom:role")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(attrs) != 1 {
+		t.Fatalf("expected 1 deduped attribute, got %d", len(attrs))
+	}
+	if val, ok := attrs["custom:tenantId"]; !ok || val != "bp" {
+		t.Errorf("expected custom:tenantId=bp, got %q ok=%v", val, ok)
+	}
+}
+
+func TestNormalizeCustomAttributes_RejectsConflictingKeys(t *testing.T) {
+	_, err := normalizeCustomAttributes(map[string]string{
+		"tenantId":        "bp",
+		"custom:tenantId": "suncor",
+	}, "custom:role")
+	if err == nil {
+		t.Fatal("expected error when equivalent keys have different values")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("expected error to wrap ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestNormalizeCustomAttributes_RejectsRoleCollision(t *testing.T) {
+	_, err := normalizeCustomAttributes(map[string]string{
+		"custom:role": "admin",
+	}, "custom:role")
+	if err == nil {
+		t.Fatal("expected error when custom attribute collides with role attribute")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("expected error to wrap ErrInvalidInput, got %v", err)
+	}
+}
+
+func TestCognitoCreateUser_RejectsDuplicateCustomAttributeKeys(t *testing.T) {
+	originalFactory := cognitoClientFactory
+	defer func() { cognitoClientFactory = originalFactory }()
+
+	mockClient := &mockProvisioningCognitoClient{}
+	SetCognitoClientFactory(func(ctx context.Context, cfg aws.Config, userPoolID string) CognitoClient {
+		return mockClient
+	})
+	SetOAuthConfig(&OAuthConfig{
+		UserPoolID: "us-east-1_test",
+		Region:     "us-east-1",
+	})
+
+	ctx := context.Background()
+	req := CreateUserRequest{
+		Email:      "dup@example.com",
+		GivenName:  "Dup",
+		FamilyName: "Key",
+		Role:       "user",
+		CustomAttributes: map[string]string{
+			"tenantId":        "bp",
+			"custom:tenantId": "suncor",
+		},
+	}
+
+	_, err := cognitoCreateUser(ctx, req, GetOAuthConfig())
+	if err == nil {
+		t.Fatal("expected error when duplicate keys have conflicting values")
+	}
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Errorf("expected error to wrap ErrInvalidInput, got %v", err)
+	}
+	if mockClient.createUserInput != nil {
+		t.Error("expected AdminCreateUser not to be called on validation failure")
 	}
 }

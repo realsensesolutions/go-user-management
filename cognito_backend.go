@@ -114,22 +114,19 @@ func cognitoCreateUser(ctx context.Context, req CreateUserRequest, oauthConfig *
 	})
 
 	if len(req.CustomAttributes) > 0 {
-		keys := make([]string, 0, len(req.CustomAttributes))
-		for k, v := range req.CustomAttributes {
-			if v != "" {
-				keys = append(keys, k)
-			}
+		normAttrs, err := normalizeCustomAttributes(req.CustomAttributes, getRoleAttributeName())
+		if err != nil {
+			return nil, err
+		}
+		keys := make([]string, 0, len(normAttrs))
+		for k := range normAttrs {
+			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		for _, key := range keys {
-			val := req.CustomAttributes[key]
-			if val == "" {
-				continue
-			}
-			attrName := normalizeCustomAttributeName(key)
+		for _, attrName := range keys {
 			attributes = append(attributes, types.AttributeType{
 				Name:  aws.String(attrName),
-				Value: aws.String(val),
+				Value: aws.String(normAttrs[attrName]),
 			})
 		}
 	}
@@ -256,6 +253,9 @@ func cognitoUserToUser(cognitoUser types.UserType) (*User, error) {
 	}
 
 	for _, attr := range cognitoUser.Attributes {
+		if attr.Name == nil || attr.Value == nil {
+			continue
+		}
 		switch *attr.Name {
 		case "email":
 			user.Email = *attr.Value

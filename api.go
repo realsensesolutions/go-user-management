@@ -39,6 +39,49 @@ func normalizeCustomAttributeName(name string) string {
 	return name
 }
 
+// normalizeCustomAttributes skips empty values, normalizes keys, dedupes by normalized
+// name, and rejects collisions between different raw keys or with the role attribute.
+func normalizeCustomAttributes(attrs map[string]string, roleAttrName string) (map[string]string, error) {
+	if len(attrs) == 0 {
+		return nil, nil
+	}
+
+	normalized := make(map[string]string)
+	rawByNormalized := make(map[string]string)
+
+	keys := make([]string, 0, len(attrs))
+	for k, v := range attrs {
+		if v != "" {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+
+	for _, rawKey := range keys {
+		val := attrs[rawKey]
+		if val == "" {
+			continue
+		}
+		normKey := normalizeCustomAttributeName(rawKey)
+
+		if normKey == roleAttrName {
+			return nil, fmt.Errorf("custom attribute %q collides with role attribute %q: %w", rawKey, roleAttrName, ErrInvalidInput)
+		}
+
+		if existingVal, exists := normalized[normKey]; exists {
+			if existingVal != val {
+				return nil, fmt.Errorf("custom attribute keys %q and %q collide on %q with different values: %w", rawByNormalized[normKey], rawKey, normKey, ErrInvalidInput)
+			}
+			continue
+		}
+
+		normalized[normKey] = val
+		rawByNormalized[normKey] = rawKey
+	}
+
+	return normalized, nil
+}
+
 func GetUser(ctx context.Context, email string) (*User, error) {
 	if email == "" {
 		return nil, fmt.Errorf("email cannot be empty: %w", ErrInvalidInput)
@@ -56,6 +99,9 @@ func GetUser(ctx context.Context, email string) (*User, error) {
 	return cognitoUserToUser(*cognitoUser)
 }
 
+// CreateUser provisions a Cognito user without setting a temporary password.
+// Post-create verification and rollback on failure are provided by
+// CreateUserWithInvitation only; CreateUser does not verify or roll back.
 func CreateUser(ctx context.Context, req CreateUserRequest) (*User, error) {
 	if req.Email == "" {
 		return nil, fmt.Errorf("email is required: %w", ErrInvalidInput)
@@ -426,7 +472,7 @@ func CreateUserWithInvitation(ctx context.Context, req CreateUserRequest) (*User
 
 	if err := assertRequiredCustomAttributes(verifiedUser, req); err != nil {
 		rollback()
-		return nil, "", err
+		return nil, "", fmt.Errorf("provisioning verification: %w", err)
 	}
 
 	user, err := cognitoUserToUser(*verifiedUser)
@@ -460,19 +506,17 @@ func assertRequiredCustomAttributes(cognitoUser *types.UserType, req CreateUserR
 	}
 
 	if len(req.CustomAttributes) > 0 {
-		keys := make([]string, 0, len(req.CustomAttributes))
-		for k, v := range req.CustomAttributes {
-			if v != "" {
-				keys = append(keys, k)
-			}
+		normAttrs, err := normalizeCustomAttributes(req.CustomAttributes, roleAttr)
+		if err != nil {
+			return fmt.Errorf("provisioning verification failed: %w", err)
+		}
+		keys := make([]string, 0, len(normAttrs))
+		for k := range normAttrs {
+			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		for _, key := range keys {
-			expected := req.CustomAttributes[key]
-			if expected == "" {
-				continue
-			}
-			attrName := normalizeCustomAttributeName(key)
+		for _, attrName := range keys {
+			expected := normAttrs[attrName]
 			if got, ok := attrs[attrName]; !ok || got != expected {
 				return fmt.Errorf("provisioning verification failed: missing or incorrect %s", attrName)
 			}
